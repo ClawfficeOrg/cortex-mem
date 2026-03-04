@@ -19,7 +19,7 @@ use cortex_mem_core::{
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// High-level memory operations with OpenViking-style tiered access
+/// High-level memory operations
 ///
 /// All operations require:
 /// - LLM client for layer generation
@@ -41,10 +41,11 @@ pub struct MemoryOperations {
 
     pub(crate) default_user_id: String,
     pub(crate) default_agent_id: String,
-    
+
     /// v2.5: 事件发送器，用于异步触发层级生成
-    pub(crate) memory_event_tx: Option<tokio::sync::mpsc::UnboundedSender<cortex_mem_core::memory_events::MemoryEvent>>,
-    
+    pub(crate) memory_event_tx:
+        Option<tokio::sync::mpsc::UnboundedSender<cortex_mem_core::memory_events::MemoryEvent>>,
+
     /// v2.5: 事件协调器引用，用于等待后台任务完成
     pub(crate) event_coordinator: Option<Arc<cortex_mem_core::MemoryEventCoordinator>>,
 }
@@ -113,7 +114,7 @@ impl MemoryOperations {
             api_key: qdrant_api_key
                 .map(|s| s.to_string())
                 .or_else(|| std::env::var("QDRANT_API_KEY").ok()),
-            tenant_id: Some(tenant_id.clone()),  // 设置租户ID
+            tenant_id: Some(tenant_id.clone()), // 设置租户ID
         };
         let vector_store = Arc::new(QdrantVectorStore::new(&qdrant_config).await?);
         tracing::info!(
@@ -143,10 +144,10 @@ impl MemoryOperations {
             embedding_client.clone(),
             vector_store.clone(),
         );
-        
+
         // 保存 coordinator 克隆用于后台任务等待
         let coordinator_clone = coordinator.clone();
-        
+
         // Start the coordinator event loop in background
         tokio::spawn(coordinator.start(event_rx));
         tracing::info!("MemoryEventCoordinator started for v2.5 incremental updates");
@@ -158,7 +159,8 @@ impl MemoryOperations {
             config,
             llm_client.clone(),
             event_bus.clone(),
-        ).with_memory_event_tx(memory_event_tx.clone());
+        )
+        .with_memory_event_tx(memory_event_tx.clone());
         let session_manager = Arc::new(RwLock::new(session_manager));
 
         // LLM-enabled LayerManager for high-quality L0/L1 generation
@@ -345,10 +347,10 @@ impl MemoryOperations {
 
             default_user_id: actual_user_id,
             default_agent_id: tenant_id.clone(),
-            
+
             // v2.5: 保存事件发送器
             memory_event_tx: Some(memory_event_tx),
-            
+
             // v2.5: 保存事件协调器引用，用于等待后台任务完成
             event_coordinator: Some(coordinator_clone),
         })
@@ -708,10 +710,12 @@ impl MemoryOperations {
     /// 而不是基于时间的启发式等待
     pub async fn wait_for_background_tasks(&self, max_wait_secs: u64) -> bool {
         use std::time::Duration;
-        
+
         if let Some(ref coordinator) = self.event_coordinator {
             // 使用真正的事件通知机制
-            coordinator.wait_for_completion(Duration::from_secs(max_wait_secs)).await
+            coordinator
+                .wait_for_completion(Duration::from_secs(max_wait_secs))
+                .await
         } else {
             // 降级：如果没有 coordinator，使用简单的等待
             log::warn!("⚠️ MemoryEventCoordinator 未初始化，使用简单等待");
@@ -734,7 +738,7 @@ impl MemoryOperations {
     /// * `check_interval_secs` - 检查间隔（秒），默认 1 秒
     pub async fn flush_and_wait(&self, check_interval_secs: Option<u64>) -> bool {
         let interval = std::time::Duration::from_secs(check_interval_secs.unwrap_or(1));
-        
+
         if let Some(ref coordinator) = self.event_coordinator {
             coordinator.flush_and_wait(interval).await
         } else {

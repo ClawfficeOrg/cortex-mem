@@ -1,6 +1,6 @@
 //! Session memory extraction module
 //!
-//! Implements OpenViking-style memory extraction from sessions:
+//! Implements memory extraction from sessions:
 //! - Extract user preferences
 //! - Extract entities (people, projects)
 //! - Extract events/decisions
@@ -173,14 +173,14 @@ impl MemoryExtractor {
         }
 
         tracing::info!("🧠 开始从 {} 条消息中提取记忆", messages.len());
-        
+
         let prompt = self.build_extraction_prompt(messages);
         tracing::debug!("📝 记忆提取 prompt 长度: {} 字符", prompt.len());
-        
+
         let response = self.llm_client.complete(&prompt).await?;
-        
+
         let memories = self.parse_extraction_response(&response)?;
-        
+
         tracing::info!(
             "✅ 记忆提取完成: 偏好={}, 实体={}, 事件={}, 案例={}, 个人信息={}, 工作经历={}, 关系={}, 目标={}",
             memories.preferences.len(),
@@ -192,7 +192,7 @@ impl MemoryExtractor {
             memories.relationships.len(),
             memories.goals.len()
         );
-        
+
         Ok(memories)
     }
 
@@ -214,7 +214,7 @@ impl MemoryExtractor {
 2. **Preserve Technical Terms** (MANDATORY):
    - Keep technical terminology unchanged in their original language
    - Programming languages: Rust, Python, TypeScript, JavaScript, Go
-   - Frameworks: OpenViking, Cortex Memory, Rig, React, Vue
+   - Frameworks: Cortex Memory, Rig, React, Vue
    - Personality types: INTJ, ENTJ, MBTI, DISC
    - Proper nouns: names, companies, projects
    - Acronyms: LLM, AI, ML, API, HTTP, REST
@@ -223,15 +223,15 @@ impl MemoryExtractor {
    ✅ CORRECT (Chinese conversation):
    - "Cortex Memory 是基于 Rust 的长期记忆系统"
    - "用户是 INTJ 人格类型，擅长 Python 和 Rust"
-   
+
    ❌ WRONG (Chinese conversation):
    - "Cortex Memory is based on 铁锈 long-term memory system"
    - "User is an INTJ personality type skilled in 蟒蛇 and 铁锈"
-   
+
    ✅ CORRECT (English conversation):
    - "User works at 快手 (Kuaishou) as a Rust engineer"
    - "Cortex Memory is a long-term memory system for Agent"
-   
+
    ❌ WRONG (English conversation):
    - "用户 works at Kuaishou as a Rust 工程师"
    - "Cortex Memory is a 长期记忆 system for Agent"

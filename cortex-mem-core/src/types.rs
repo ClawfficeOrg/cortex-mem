@@ -24,7 +24,7 @@ impl Dimension {
             Dimension::Session => "session",
         }
     }
-    
+
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "resources" => Some(Dimension::Resources),
@@ -55,7 +55,7 @@ impl ContextLayer {
             ContextLayer::L2Detail => "",
         }
     }
-    
+
     pub fn max_tokens(&self) -> usize {
         match self {
             ContextLayer::L0Abstract => 100,
@@ -121,7 +121,7 @@ impl Default for MemoryMetadata {
     }
 }
 
-/// User memory category (OpenViking-aligned)
+/// User memory category
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UserMemoryCategory {
     /// User profile (appendable)
@@ -143,7 +143,7 @@ impl UserMemoryCategory {
             UserMemoryCategory::Events => "events",
         }
     }
-    
+
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "profile" => Some(UserMemoryCategory::Profile),
@@ -155,7 +155,7 @@ impl UserMemoryCategory {
     }
 }
 
-/// Agent memory category (OpenViking-aligned)
+/// Agent memory category
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AgentMemoryCategory {
     /// Problem + solution cases
@@ -174,7 +174,7 @@ impl AgentMemoryCategory {
             AgentMemoryCategory::Instructions => "instructions",
         }
     }
-    
+
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "cases" => Some(AgentMemoryCategory::Cases),
@@ -229,7 +229,7 @@ impl Filters {
     pub fn add_custom(&mut self, key: &str, value: impl Into<serde_json::Value>) {
         self.custom.insert(key.to_string(), value.into());
     }
-    
+
     /// Create filters with a specific layer
     pub fn with_layer(layer: &str) -> Self {
         let mut filters = Self::default();

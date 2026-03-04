@@ -131,6 +131,12 @@ enum SessionAction {
         #[arg(short, long)]
         title: Option<String>,
     },
+
+    /// Close a session and trigger memory extraction, layer generation, and indexing
+    Close {
+        /// Thread ID to close
+        thread: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -264,6 +270,9 @@ async fn main() -> Result<()> {
             }
             SessionAction::Create { thread, title } => {
                 session::create(operations, &thread, title.as_deref()).await?;
+            }
+            SessionAction::Close { thread } => {
+                session::close(operations, &thread).await?;
             }
         },
         Commands::Stats => {

@@ -51,3 +51,18 @@ pub async fn create(
 
     Ok(())
 }
+
+/// Close a session and trigger memory extraction, layer generation, and indexing
+pub async fn close(operations: Arc<MemoryOperations>, thread: &str) -> Result<()> {
+    println!("{} Closing session: {}", "🔒".bold(), thread.cyan());
+
+    // Close the session (triggers SessionClosed event → MemoryEventCoordinator)
+    operations.close_session(thread).await?;
+
+    println!("{} Session closed successfully", "✓".green().bold());
+    println!("  {}: {}", "Thread ID".cyan(), thread);
+    println!();
+    println!("{} Memory extraction, L0/L1 generation, and indexing initiated in background.", "ℹ".blue().bold());
+
+    Ok(())
+}
