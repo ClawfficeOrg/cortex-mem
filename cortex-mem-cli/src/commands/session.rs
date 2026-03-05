@@ -62,7 +62,17 @@ pub async fn close(operations: Arc<MemoryOperations>, thread: &str) -> Result<()
     println!("{} Session closed successfully", "✓".green().bold());
     println!("  {}: {}", "Thread ID".cyan(), thread);
     println!();
-    println!("{} Memory extraction, L0/L1 generation, and indexing initiated in background.", "ℹ".blue().bold());
+    println!("{} Waiting for memory extraction, L0/L1 generation, and indexing to complete...", "⏳".yellow().bold());
+
+    // Wait for background tasks to complete (max 60 seconds)
+    // This ensures memory extraction, layer generation, and vector indexing finish before CLI exits
+    let completed = operations.flush_and_wait(Some(1)).await;
+
+    if completed {
+        println!("{} All background tasks completed successfully", "✓".green().bold());
+    } else {
+        println!("{} Background tasks timed out (some may still be processing)", "⚠".yellow().bold());
+    }
 
     Ok(())
 }

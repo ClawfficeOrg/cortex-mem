@@ -87,6 +87,10 @@ enum Commands {
         /// Show abstract (L0) instead of full content
         #[arg(short, long)]
         abstract_only: bool,
+
+        /// Show overview (L1) instead of full content
+        #[arg(short, long)]
+        overview: bool,
     },
 
     /// Delete a memory
@@ -258,8 +262,8 @@ async fn main() -> Result<()> {
         } => {
             list::execute(operations, uri.as_deref(), include_abstracts).await?;
         }
-        Commands::Get { uri, abstract_only } => {
-            get::execute(operations, &uri, abstract_only).await?;
+        Commands::Get { uri, abstract_only, overview } => {
+            get::execute(operations, &uri, abstract_only, overview).await?;
         }
         Commands::Delete { uri } => {
             delete::execute(operations, &uri).await?;
