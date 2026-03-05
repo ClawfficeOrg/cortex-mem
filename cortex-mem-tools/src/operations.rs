@@ -81,6 +81,24 @@ impl MemoryOperations {
         self.auto_indexer.as_ref()
     }
 
+    /// Get the default user ID
+    pub fn default_user_id(&self) -> &str {
+        &self.default_user_id
+    }
+
+    /// Get the default agent ID
+    pub fn default_agent_id(&self) -> &str {
+        &self.default_agent_id
+    }
+
+    /// Get the memory event sender (for triggering processing)
+    pub fn memory_event_tx(
+        &self,
+    ) -> Option<&tokio::sync::mpsc::UnboundedSender<cortex_mem_core::memory_events::MemoryEvent>>
+    {
+        self.memory_event_tx.as_ref()
+    }
+
     /// Create from data directory with tenant isolation, LLM support, and vector search
     ///
     /// This is the primary constructor that requires all dependencies.
