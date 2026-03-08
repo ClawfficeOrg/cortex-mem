@@ -141,8 +141,8 @@ impl LLMClientImpl {
     pub async fn complete(&self, prompt: &str) -> Result<String> {
         use rig::completion::Prompt;
         
-        tracing::info!("🔄 LLM 调用开始 [模型: {}]", self.config.model_efficient);
-        tracing::debug!("📝 Prompt 长度: {} 字符", prompt.len());
+        tracing::info!("LLM call started [model: {}]", self.config.model_efficient);
+        tracing::debug!("Prompt length: {} chars", prompt.len());
         
         let start = std::time::Instant::now();
         
@@ -153,7 +153,7 @@ impl LLMClientImpl {
             .map_err(|e| crate::Error::Llm(format!("LLM completion failed: {}", e)))?;
 
         let elapsed = start.elapsed();
-        tracing::info!("✅ LLM 调用完成 [耗时: {:.2}s, 响应: {} 字符]", elapsed.as_secs_f64(), response.len());
+        tracing::info!("LLM call completed [elapsed: {:.2}s, response: {} chars]", elapsed.as_secs_f64(), response.len());
         
         Ok(response)
     }
@@ -162,8 +162,8 @@ impl LLMClientImpl {
     pub async fn complete_with_system(&self, system: &str, prompt: &str) -> Result<String> {
         use rig::completion::Prompt;
         
-        tracing::info!("🔄 LLM 调用开始 (with system) [模型: {}]", self.config.model_efficient);
-        tracing::debug!("📝 System: {}..., Prompt 长度: {} 字符", 
+        tracing::info!("LLM call started (with system) [model: {}]", self.config.model_efficient);
+        tracing::debug!("System: {}..., Prompt length: {} chars", 
             &system.chars().take(50).collect::<String>(), prompt.len());
         
         let start = std::time::Instant::now();
@@ -175,7 +175,7 @@ impl LLMClientImpl {
             .map_err(|e| crate::Error::Llm(format!("LLM completion failed: {}", e)))?;
             
         let elapsed = start.elapsed();
-        tracing::info!("✅ LLM 调用完成 [耗时: {:.2}s, 响应: {} 字符]", elapsed.as_secs_f64(), response.len());
+        tracing::info!("LLM call completed [elapsed: {:.2}s, response: {} chars]", elapsed.as_secs_f64(), response.len());
         
         Ok(response)
     }
@@ -287,8 +287,8 @@ impl LLMClient for LLMClientImpl {
     async fn complete(&self, prompt: &str) -> Result<String> {
         use rig::completion::Prompt;
         
-        tracing::info!("🔄 LLM 调用开始 [模型: {}]", self.config.model_efficient);
-        tracing::debug!("📝 Prompt 长度: {} 字符", prompt.len());
+        tracing::info!("LLM call started [model: {}]", self.config.model_efficient);
+        tracing::debug!("Prompt length: {} chars", prompt.len());
         
         let start = std::time::Instant::now();
         
@@ -299,7 +299,7 @@ impl LLMClient for LLMClientImpl {
             .map_err(|e| crate::Error::Llm(format!("LLM completion failed: {}", e)))?;
 
         let elapsed = start.elapsed();
-        tracing::info!("✅ LLM 调用完成 [耗时: {:.2}s, 响应: {} 字符]", elapsed.as_secs_f64(), response.len());
+        tracing::info!("LLM call completed [elapsed: {:.2}s, response: {} chars]", elapsed.as_secs_f64(), response.len());
 
         Ok(response)
     }
@@ -307,8 +307,8 @@ impl LLMClient for LLMClientImpl {
     async fn complete_with_system(&self, system: &str, prompt: &str) -> Result<String> {
         use rig::completion::Prompt;
         
-        tracing::info!("🔄 LLM 调用开始 (with system) [模型: {}]", self.config.model_efficient);
-        tracing::debug!("📝 System: {}..., Prompt 长度: {} 字符", 
+        tracing::info!("LLM call started (with system) [model: {}]", self.config.model_efficient);
+        tracing::debug!("System: {}..., Prompt length: {} chars", 
             &system.chars().take(50).collect::<String>(), prompt.len());
         
         let start = std::time::Instant::now();
@@ -320,7 +320,7 @@ impl LLMClient for LLMClientImpl {
             .map_err(|e| crate::Error::Llm(format!("LLM completion failed: {}", e)))?;
             
         let elapsed = start.elapsed();
-        tracing::info!("✅ LLM 调用完成 [耗时: {:.2}s, 响应: {} 字符]", elapsed.as_secs_f64(), response.len());
+        tracing::info!("LLM call completed [elapsed: {:.2}s, response: {} chars]", elapsed.as_secs_f64(), response.len());
             
         Ok(response)
     }

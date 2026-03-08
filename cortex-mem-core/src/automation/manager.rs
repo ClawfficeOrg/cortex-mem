@@ -90,26 +90,26 @@ impl AutomationManager {
         // 启动时自动生成缺失的 L0/L1 文件
         if self.config.auto_generate_layers_on_startup {
             if let Some(ref generator) = self.layer_generator {
-                info!("启动时检查并生成缺失的 L0/L1 文件...");
+                info!("Checking and generating missing L0/L1 files on startup...");
                 let generator_clone = generator.clone();
                 let semaphore = self.llm_semaphore.clone();
                 tokio::spawn(async move {
-                    // 获取信号量许可
+                    // Acquire semaphore permit
                     let _permit = semaphore.acquire().await;
                     match generator_clone.ensure_all_layers().await {
                         Ok(stats) => {
                             info!(
-                                "启动时层级生成完成: 总计 {}, 成功 {}, 失败 {}",
+                                "Startup layer generation completed: total={}, generated={}, failed={}",
                                 stats.total, stats.generated, stats.failed
                             );
                         }
                         Err(e) => {
-                            warn!("启动时层级生成失败: {}", e);
+                            warn!("Startup layer generation failed: {}", e);
                         }
                     }
                 });
             } else {
-                warn!("auto_generate_layers_on_startup 已启用但未设置 layer_generator");
+                warn!("auto_generate_layers_on_startup is enabled but layer_generator is not set");
             }
         }
 

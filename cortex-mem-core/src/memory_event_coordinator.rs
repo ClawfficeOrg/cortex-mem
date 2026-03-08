@@ -300,34 +300,34 @@ impl MemoryEventCoordinator {
     /// * `true` - 所有任务已完成
     /// * `false` - 在等待过程中有新任务产生（通常不应该发生）
     pub async fn flush_and_wait(&self, check_interval: Duration) -> bool {
-        log::info!("🔄 开始刷新并等待所有任务完成...");
+        log::info!("Starting flush and waiting for all tasks to complete...");
 
         let start = std::time::Instant::now();
-        let max_wait = Duration::from_secs(300); // 最大等待 5 分钟
+        let max_wait = Duration::from_secs(300); // Max wait 5 minutes
 
-        // 阶段0：让出运行时，让事件循环有机会运行
-        // 这是关键：tokio::task::yield_now() 让其他任务有机会执行
-        log::info!("⏳ 阶段0：让出运行时，等待事件被取出...");
+        // Phase 0: Yield runtime to let event loop have a chance to run
+        // This is critical: tokio::task::yield_now() lets other tasks execute
+        log::info!("Phase 0: Yielding runtime, waiting for events to be processed...");
         for i in 0..10 {
             tokio::task::yield_now().await;
             tokio::time::sleep(Duration::from_millis(10)).await;
 
             let pending = self.pending_tasks.load(Ordering::SeqCst);
             if pending > 0 {
-                log::info!("✅ 阶段0完成：检测到 {} 个任务开始处理", pending);
+                log::info!("Phase 0 completed: detected {} tasks started processing", pending);
                 break;
             }
 
             if i == 9 {
-                log::info!("ℹ️ 阶段0完成：无待处理任务检测到");
+                log::info!("Phase 0 completed: no pending tasks detected");
             }
         }
 
-        // 阶段1：等待当前事件处理完成
+        // Phase 1: Wait for current event processing to complete
         loop {
             let pending = self.pending_tasks.load(Ordering::SeqCst);
             if pending == 0 {
-                // 等待一小段时间，看是否有新事件被取出
+                // Wait a short time to see if new events are being processed
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 let pending_after = self.pending_tasks.load(Ordering::SeqCst);
                 if pending_after == 0 {
@@ -336,75 +336,75 @@ impl MemoryEventCoordinator {
                 continue;
             }
 
-            // 检查是否超时
+            // Check if timed out
             if start.elapsed() >= max_wait {
-                log::warn!("⚠️ 等待超时，仍有 {} 个任务未完成", pending);
+                log::warn!("Wait timeout, still have {} tasks not completed", pending);
                 return false;
             }
 
             log::trace!(
-                "⏳ 等待 {} 个事件处理任务完成...（已等待 {:?}）",
+                "Waiting for {} event processing tasks... (elapsed: {:?})",
                 pending,
                 start.elapsed()
             );
             tokio::time::sleep(check_interval).await;
         }
-        log::info!("✅ 阶段1完成：事件处理任务已清空");
+        log::info!("Phase 1 completed: event processing tasks cleared");
 
-        // 阶段2：刷新 debouncer 中的待处理更新
+        // Phase 2: Flush pending updates in debouncer
         if let Some(ref debouncer) = self.debouncer {
             let pending_count = debouncer.pending_count().await;
             if pending_count > 0 {
                 log::info!(
-                    "🔄 阶段2：刷新 {} 个 debouncer 待处理更新...",
+                    "Phase 2: Flushing {} debouncer pending updates...",
                     pending_count
                 );
                 let flushed = debouncer.flush_all(&self.layer_updater).await;
-                log::info!("✅ 阶段2完成：已刷新 {} 个层级更新", flushed);
+                log::info!("Phase 2 completed: flushed {} layer updates", flushed);
             } else {
-                log::info!("✅ 阶段2完成：debouncer 无待处理更新");
+                log::info!("Phase 2 completed: debouncer has no pending updates");
             }
         } else {
-            log::info!("✅ 阶段2跳过：debouncer 未启用");
+            log::info!("Phase 2 skipped: debouncer not enabled");
         }
 
-        // 阶段3：再次等待，确保 debouncer 刷新产生的任务也完成
+        // Phase 3: Wait again to ensure tasks from debouncer flush also complete
         loop {
             let pending = self.pending_tasks.load(Ordering::SeqCst);
             if pending == 0 {
                 break;
             }
 
-            // 检查是否超时
+            // Check if timed out
             if start.elapsed() >= max_wait {
-                log::warn!("⚠️ 等待超时，仍有 {} 个任务未完成", pending);
+                log::warn!("Wait timeout, still have {} tasks not completed", pending);
                 return false;
             }
 
             log::info!(
-                "⏳ 等待 {} 个刷新后任务完成...（已等待 {:?}）",
+                "Waiting for {} post-flush tasks... (elapsed: {:?})",
                 pending,
                 start.elapsed()
             );
             tokio::time::sleep(check_interval).await;
         }
-        log::info!("✅ 阶段3完成：所有任务已清空");
+        log::info!("Phase 3 completed: all tasks cleared");
 
         log::info!(
-            "🎉 flush_and_wait 完成：所有任务和层级更新已处理（耗时 {:?}）",
+            "flush_and_wait completed: all tasks and layer updates processed (elapsed: {:?})",
             start.elapsed()
         );
         true
     }
 
-    /// 等待所有后台任务完成
+    /// Wait for all background tasks to complete
     ///
     /// # Arguments
-    /// * `timeout` - 最大等待时间
+    /// * `timeout` - Maximum wait time
     ///
     /// # Returns
-    /// * `true` - 所有任务已完成
-    /// * `false` - 超时
+    /// * `true` - All tasks completed
+    /// * `false` - Timeout
     pub async fn wait_for_completion(&self, timeout: Duration) -> bool {
         let start = std::time::Instant::now();
         let check_interval = Duration::from_millis(500);
@@ -412,31 +412,31 @@ impl MemoryEventCoordinator {
         loop {
             let pending = self.pending_tasks.load(Ordering::SeqCst);
 
-            // 如果没有待处理任务，返回成功
+            // If no pending tasks, return success
             if pending == 0 {
-                // 额外等待一小段时间，确保没有新任务刚刚提交
+                // Wait a short time to ensure no new tasks just submitted
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 let pending_after = self.pending_tasks.load(Ordering::SeqCst);
                 if pending_after == 0 {
-                    log::info!("✅ 所有后台任务已完成");
+                    log::info!("All background tasks completed");
                     return true;
                 }
-                // 有新任务提交，继续等待
+                // New tasks submitted, continue waiting
                 continue;
             }
 
-            // 检查是否超时
+            // Check if timed out
             if start.elapsed() >= timeout {
-                log::warn!("⚠️ 等待后台任务超时，仍有 {} 个任务未完成", pending);
+                log::warn!("Wait for background tasks timeout, still have {} tasks not completed", pending);
                 return false;
             }
 
-            // 首次打印等待日志
+            // Print wait log on first time
             if start.elapsed() < Duration::from_millis(600) {
-                log::info!("⏳ 等待 {} 个后台任务完成...", pending);
+                log::info!("Waiting for {} background tasks to complete...", pending);
             }
 
-            // 等待一小段时间再检查
+            // Wait a short time before checking again
             tokio::time::sleep(check_interval).await;
         }
     }
@@ -766,9 +766,9 @@ impl MemoryEventCoordinator {
                 session_id, user_result.created, user_result.updated
             );
 
-            // 注意：不在这里调用 update_all_layers，因为它是长时间运行的操作
-            // 会阻塞事件处理循环。改为在退出流程中显式调用 generate_user_agent_layers
-            log::info!("📝 记忆已写入，退出时应调用 generate_user_agent_layers 生成层级文件");
+            // Note: Not calling update_all_layers here as it's a long-running operation
+            // that would block the event processing loop. Instead, call generate_user_agent_layers explicitly during exit flow
+            log::info!("Memory written, should call generate_user_agent_layers during exit to generate layer files");
         } else {
             log::info!("⚠️ No memories extracted from session {}", session_id);
         }

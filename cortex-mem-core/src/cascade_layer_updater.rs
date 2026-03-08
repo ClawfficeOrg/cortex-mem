@@ -790,23 +790,23 @@ impl CascadeLayerUpdater {
     pub async fn update_all_layers(&self, scope: &MemoryScope, owner_id: &str) -> Result<()> {
         let root_uri = self.get_scope_root(scope, owner_id);
         
-        log::info!("🔄 update_all_layers: 检查根目录 {}", root_uri);
+        log::info!("update_all_layers: checking root directory {}", root_uri);
         
         if !self.filesystem.exists(&root_uri).await? {
-            log::info!("📂 根目录 {} 不存在，跳过", root_uri);
+            log::info!("Root directory {} does not exist, skipping", root_uri);
             return Ok(());
         }
         
-        log::info!("📂 根目录存在，开始递归更新层级文件...");
+        log::info!("Root directory exists, starting recursive layer file update...");
         
         // Walk through all directories and update layers
         self.update_all_layers_recursive(&root_uri, scope, owner_id).await?;
         
         // Update root layers last
-        log::info!("🔄 开始更新根目录层级文件...");
+        log::info!("Starting root directory layer file update...");
         self.update_root_layers(scope, owner_id).await?;
         
-        log::info!("✅ update_all_layers 完成: {:?}", scope);
+        log::info!("update_all_layers completed: {:?}", scope);
         Ok(())
     }
 
@@ -820,12 +820,12 @@ impl CascadeLayerUpdater {
         Box::pin(async move {
             let entries = self.filesystem.list(dir_uri).await?;
             
-            log::info!("📂 update_all_layers_recursive: {} 有 {} 个条目", dir_uri, entries.len());
+            log::info!("update_all_layers_recursive: {} has {} entries", dir_uri, entries.len());
             
             // First, process all subdirectories
             for entry in &entries {
                 if entry.is_directory && !entry.name.starts_with('.') {
-                    log::info!("📂   进入子目录: {}", entry.name);
+                    log::info!("  Entering subdirectory: {}", entry.name);
                     self.update_all_layers_recursive(&entry.uri, scope, owner_id).await?;
                 }
             }
@@ -835,13 +835,13 @@ impl CascadeLayerUpdater {
                 !e.is_directory && !e.name.starts_with('.') && e.name.ends_with(".md")
             });
             
-            log::info!("📂 目录 {} 是否有内容文件: {}", dir_uri, has_content);
+            log::info!("Directory {} has content files: {}", dir_uri, has_content);
             
             if has_content {
-                log::info!("🔄 开始为目录 {} 生成层级文件...", dir_uri);
+                log::info!("Starting layer file generation for directory {}...", dir_uri);
                 match self.update_directory_layers(dir_uri, scope, owner_id).await {
-                    Ok(_) => log::info!("✅ 目录 {} 层级文件生成成功", dir_uri),
-                    Err(e) => log::warn!("⚠️ 目录 {} 层级文件生成失败: {}", dir_uri, e),
+                    Ok(_) => log::info!("Directory {} layer files generated successfully", dir_uri),
+                    Err(e) => log::warn!("Directory {} layer file generation failed: {}", dir_uri, e),
                 }
             }
             

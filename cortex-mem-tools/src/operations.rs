@@ -568,17 +568,17 @@ impl MemoryOperations {
         Ok(exists)
     }
 
-    /// 生成所有缺失的 L0/L1 层级文件（用于退出时调用）
+    /// Generate all missing L0/L1 layer files (for calling during exit)
     ///
-    /// 这个方法扫描所有目录，找出缺失 .abstract.md 或 .overview.md 的目录，
-    /// 并批量生成它们。适合在应用退出时调用。
+    /// This method scans all directories, finds those missing .abstract.md or .overview.md,
+    /// and generates them in batches. Suitable for calling during application exit.
     pub async fn ensure_all_layers(&self) -> Result<cortex_mem_core::automation::GenerationStats> {
         if let Some(ref generator) = self.layer_generator {
-            tracing::info!("🔍 开始扫描并生成缺失的 L0/L1 层级文件...");
+            tracing::info!("Starting scan and generation of missing L0/L1 layer files...");
             match generator.ensure_all_layers().await {
                 Ok(stats) => {
                     tracing::info!(
-                        "✅ L0/L1 层级生成完成: 总计 {}, 成功 {}, 失败 {}",
+                        "L0/L1 layer generation completed: total={}, generated={}, failed={}",
                         stats.total,
                         stats.generated,
                         stats.failed
@@ -586,34 +586,34 @@ impl MemoryOperations {
                     Ok(stats)
                 }
                 Err(e) => {
-                    tracing::error!("❌ L0/L1 层级生成失败: {}", e);
+                    tracing::error!("L0/L1 layer generation failed: {}", e);
                     Err(e.into())
                 }
             }
         } else {
-            tracing::warn!("⚠️ LayerGenerator 未配置，跳过层级生成");
+            tracing::warn!("LayerGenerator not configured, skipping layer generation");
             Ok(cortex_mem_core::automation::GenerationStats::default())
         }
     }
 
-    /// 为特定session生成 L0/L1 层级文件
+    /// Generate L0/L1 layer files for a specific session
     /// # Arguments
-    /// * `session_id` - 会话ID
+    /// * `session_id` - Session ID
     ///
     /// # Returns
-    /// 返回生成统计信息
+    /// Returns generation statistics
     pub async fn ensure_session_layers(
         &self,
         session_id: &str,
     ) -> Result<cortex_mem_core::automation::GenerationStats> {
         if let Some(ref generator) = self.layer_generator {
             let timeline_uri = format!("cortex://session/{}/timeline", session_id);
-            tracing::info!("🔍 为会话 {} 生成 L0/L1 层级文件", session_id);
+            tracing::info!("Generating L0/L1 layer files for session {}", session_id);
 
             match generator.ensure_timeline_layers(&timeline_uri).await {
                 Ok(stats) => {
                     tracing::info!(
-                        "✅ 会话 {} L0/L1 层级生成完成: 总计 {}, 成功 {}, 失败 {}",
+                        "Session {} L0/L1 layer generation completed: total={}, generated={}, failed={}",
                         session_id,
                         stats.total,
                         stats.generated,
@@ -622,37 +622,37 @@ impl MemoryOperations {
                     Ok(stats)
                 }
                 Err(e) => {
-                    tracing::error!("❌ 会话 {} L0/L1 层级生成失败: {}", session_id, e);
+                    tracing::error!("Session {} L0/L1 layer generation failed: {}", session_id, e);
                     Err(e.into())
                 }
             }
         } else {
-            tracing::warn!("⚠️ LayerGenerator 未配置，跳过层级生成");
+            tracing::warn!("LayerGenerator not configured, skipping layer generation");
             Ok(cortex_mem_core::automation::GenerationStats::default())
         }
     }
 
-    /// 索引所有文件到向量数据库（用于退出时调用）
-    /// 这个方法扫描所有文件，包括新生成的 .abstract.md 和 .overview.md，
-    /// 并将它们索引到向量数据库中。适合在应用退出时调用。
+    /// Index all files to vector database (for calling during exit)
+    /// This method scans all files, including newly generated .abstract.md and .overview.md,
+    /// and indexes them to the vector database. Suitable for calling during application exit.
     pub async fn index_all_files(&self) -> Result<cortex_mem_core::automation::SyncStats> {
-        tracing::info!("📊 开始索引所有文件到向量数据库...");
+        tracing::info!("Starting to index all files to vector database...");
 
         use cortex_mem_core::automation::{SyncConfig, SyncManager};
 
-        // 创建 SyncManager
+        // Create SyncManager
         let sync_manager = SyncManager::new(
             self.filesystem.clone(),
             self.embedding_client.clone(),
             self.vector_store.clone(),
-            self.llm_client.clone(), // 不需要 Option
+            self.llm_client.clone(), // Not optional
             SyncConfig::default(),
         );
 
         match sync_manager.sync_all().await {
             Ok(stats) => {
                 tracing::info!(
-                    "✅ 索引完成: 总计 {} 个文件, {} 个已索引, {} 个跳过, {} 个错误",
+                    "Indexing completed: {} total files, {} indexed, {} skipped, {} errors",
                     stats.total_files,
                     stats.indexed_files,
                     stats.skipped_files,
@@ -661,28 +661,28 @@ impl MemoryOperations {
                 Ok(stats)
             }
             Err(e) => {
-                tracing::error!("❌ 索引失败: {}", e);
+                tracing::error!("Indexing failed: {}", e);
                 Err(e.into())
             }
         }
     }
 
-    /// 为特定session索引文件到向量数据库
+    /// Index files to vector database for a specific session
     ///
     /// # Arguments
-    /// * `session_id` - 会话ID
+    /// * `session_id` - Session ID
     ///
     /// # Returns
-    /// 返回索引统计信息
+    /// Returns indexing statistics
     pub async fn index_session_files(
         &self,
         session_id: &str,
     ) -> Result<cortex_mem_core::automation::SyncStats> {
-        tracing::info!("📊 开始为会话 {} 索引文件到向量数据库...", session_id);
+        tracing::info!("Starting to index files to vector database for session {}...", session_id);
 
         use cortex_mem_core::automation::{SyncConfig, SyncManager};
 
-        // 创建 SyncManager
+        // Create SyncManager
         let sync_manager = SyncManager::new(
             self.filesystem.clone(),
             self.embedding_client.clone(),
@@ -691,13 +691,13 @@ impl MemoryOperations {
             SyncConfig::default(),
         );
 
-        // 限定扫描范围到特定session
+        // Limit scan scope to specific session
         let session_uri = format!("cortex://session/{}", session_id);
 
         match sync_manager.sync_specific_path(&session_uri).await {
             Ok(stats) => {
                 tracing::info!(
-                    "✅ 会话 {} 索引完成: 总计 {} 个文件, {} 个已索引, {} 个跳过, {} 个错误",
+                    "Session {} indexing completed: {} total files, {} indexed, {} skipped, {} errors",
                     session_id,
                     stats.total_files,
                     stats.indexed_files,
@@ -707,7 +707,7 @@ impl MemoryOperations {
                 Ok(stats)
             }
             Err(e) => {
-                tracing::error!("❌ 会话 {} 索引失败: {}", session_id, e);
+                tracing::error!("Session {} indexing failed: {}", session_id, e);
                 Err(e.into())
             }
         }
@@ -737,8 +737,8 @@ impl MemoryOperations {
                 .wait_for_completion(Duration::from_secs(max_wait_secs))
                 .await
         } else {
-            // 降级：如果没有 coordinator，使用简单的等待
-            warn!("⚠️ MemoryEventCoordinator 未初始化，使用简单等待");
+            // Fallback: if no coordinator, use simple wait
+            warn!("MemoryEventCoordinator not initialized, using simple wait");
             tokio::time::sleep(Duration::from_secs(max_wait_secs.min(5))).await;
             true
         }
@@ -762,7 +762,7 @@ impl MemoryOperations {
         if let Some(ref coordinator) = self.event_coordinator {
             coordinator.flush_and_wait(interval).await
         } else {
-            warn!("⚠️ MemoryEventCoordinator 未初始化，跳过等待");
+            warn!("MemoryEventCoordinator not initialized, skipping wait");
             true
         }
     }
@@ -801,13 +801,13 @@ impl MemoryOperations {
 
         tracing::info!("Manual trigger processing for {:?}/{}", memory_scope, owner_id);
 
-        // 强制更新层级
+        // Force update layers
         if let Some(ref coordinator) = self.event_coordinator {
             coordinator
                 .force_full_update(&memory_scope, owner_id)
                 .await?;
         } else {
-            warn!("MemoryEventCoordinator 未初始化，无法触发处理");
+            warn!("MemoryEventCoordinator not initialized, cannot trigger processing");
             return Ok(ProcessingResult::default());
         }
 
