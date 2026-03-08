@@ -394,6 +394,8 @@ pub struct AutomationConfig {
     pub index_on_close: bool,                  // Default: true
     pub index_batch_delay: u64,                // Default: 2 seconds
     pub auto_generate_layers_on_startup: bool, // Default: false
+    pub generate_layers_every_n_messages: usize, // Default: 0 (disabled)
+    pub max_concurrent_llm_tasks: usize,       // Default: 3
 }
 ```
 

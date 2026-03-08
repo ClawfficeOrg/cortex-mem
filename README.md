@@ -448,15 +448,6 @@ timeout_secs = 30                          # Timeout for embedding requests
 # -----------------------------------------------------------------------------
 [cortex]
 data_dir = "./cortex-data"  # Directory for storing memory files and sessions
-
-# -----------------------------------------------------------------------------
-# Automation Configuration
-# -----------------------------------------------------------------------------
-[automation]
-auto_index = true           # Enable automatic indexing on file changes
-auto_extract = true         # Enable automatic extraction on session close
-index_interval_secs = 5     # Polling interval for file watcher
-batch_delay_secs = 2       # Delay before processing batched changes
 ```
 
 # 🚀 Usage
