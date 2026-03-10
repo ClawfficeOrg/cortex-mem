@@ -5,9 +5,8 @@ use cortex_mem_core::{
     SessionConfig,
     SessionManager,
     automation::{
-        AbstractConfig, AutoExtractConfig, AutoExtractor, AutoIndexer, AutomationConfig,
-        AutomationManager, IndexerConfig, LayerGenerationConfig, LayerGenerator, OverviewConfig,
-        SyncConfig, SyncManager,
+        AbstractConfig, AutoIndexer, AutomationConfig, AutomationManager, IndexerConfig,
+        LayerGenerationConfig, LayerGenerator, OverviewConfig, SyncConfig, SyncManager,
     },
     embedding::{EmbeddingClient, EmbeddingConfig},
     events::EventBus,
@@ -31,7 +30,6 @@ pub struct MemoryOperations {
     pub(crate) session_manager: Arc<RwLock<SessionManager>>,
     pub(crate) layer_manager: Arc<LayerManager>,
     pub(crate) vector_engine: Arc<VectorSearchEngine>,
-    pub(crate) auto_extractor: Option<Arc<AutoExtractor>>,
     pub(crate) layer_generator: Option<Arc<LayerGenerator>>,
     pub(crate) auto_indexer: Option<Arc<AutoIndexer>>,
 
@@ -47,7 +45,7 @@ pub struct MemoryOperations {
     pub(crate) memory_event_tx:
         Option<tokio::sync::mpsc::UnboundedSender<cortex_mem_core::memory_events::MemoryEvent>>,
 
-    /// v2.5: 事件协调器引用，用于等待后台任务完成
+    /// v2.5: 事件协调器引用，用于同步等待后台处理完成
     pub(crate) event_coordinator: Option<Arc<cortex_mem_core::MemoryEventCoordinator>>,
 }
 
@@ -65,11 +63,6 @@ impl MemoryOperations {
     /// Get the session manager
     pub fn session_manager(&self) -> &Arc<RwLock<SessionManager>> {
         &self.session_manager
-    }
-
-    /// Get the auto extractor (for manual extraction on exit)
-    pub fn auto_extractor(&self) -> Option<&Arc<AutoExtractor>> {
-        self.auto_extractor.as_ref()
     }
 
     /// Get the layer generator (for manual layer generation on exit)
@@ -121,7 +114,7 @@ impl MemoryOperations {
         filesystem.initialize().await?;
 
         // 创建EventBus用于自动化
-        let (event_bus, mut event_rx_main) = EventBus::new();
+        let (event_bus, event_rx_main) = EventBus::new();
 
         // Initialize Qdrant first (needed for MemoryEventCoordinator)
         tracing::info!("Initializing Qdrant vector store: {}", qdrant_url);
@@ -198,19 +191,7 @@ impl MemoryOperations {
         // 使用传入的user_id，如果没有则使用tenant_id
         let actual_user_id = user_id.unwrap_or_else(|| tenant_id.clone());
 
-        // 🔧 创建AutoExtractor(简化配置，移除了save_user_memories和save_agent_memories)
-        let auto_extract_config = AutoExtractConfig {
-            min_message_count: 5,
-            extract_on_close: false, // v2.5: 禁用旧机制，使用新的 MemoryEventCoordinator
-        };
-        let auto_extractor = Arc::new(AutoExtractor::with_user_id(
-            filesystem.clone(),
-            llm_client.clone(),
-            auto_extract_config,
-            &actual_user_id,
-        ));
-
-        // 创建AutoIndexer用于实时索引
+        // 创建 AutoIndexer 用于 L2 消息实时索引
         let indexer_config = IndexerConfig {
             auto_index: true,
             batch_size: 10,
@@ -223,19 +204,29 @@ impl MemoryOperations {
             indexer_config,
         ));
 
-        // 创建AutomationManager
+        // 创建 AutomationManager：仅负责 L2 消息实时索引
+        // L0/L1 生成、记忆提取、向量同步均由 MemoryEventCoordinator 处理
         let automation_config = AutomationConfig {
             auto_index: true,
-            auto_extract: false,    // Extract由单独的监听器处理
-            index_on_message: true, // ✅ 消息时自动索引L2
-            index_on_close: true,   // ✅ Session关闭时生成L0/L1并索引
+            index_on_message: true, // 消息添加时实时索引 L2
             index_batch_delay: 1,
-            auto_generate_layers_on_startup: false, // 启动时不生成（避免阻塞）
-            generate_layers_every_n_messages: 5,    // 每5条消息生成一次L0/L1
-            max_concurrent_llm_tasks: 3,            // 最多3个并发LLM任务
+            max_concurrent_tasks: 3,
         };
+        let automation_manager = AutomationManager::new(auto_indexer.clone(), automation_config);
 
-        // 创建LayerGenerator（用于退出时手动生成）
+        // 启动 AutomationManager（直接消费 EventBus 事件，无需分裂转发）
+        let tenant_id_for_automation = tenant_id.clone();
+        tokio::spawn(async move {
+            tracing::info!(
+                "AutomationManager started for tenant {} (L2 message indexing)",
+                tenant_id_for_automation
+            );
+            if let Err(e) = automation_manager.start(event_rx_main).await {
+                tracing::error!("AutomationManager stopped with error: {}", e);
+            }
+        });
+
+        // 创建 LayerGenerator（供 ensure_all_layers / ensure_session_layers 手动调用）
         let layer_gen_config = LayerGenerationConfig {
             batch_size: 10,
             delay_ms: 1000,
@@ -255,75 +246,6 @@ impl MemoryOperations {
             llm_client.clone(),
             layer_gen_config,
         ));
-
-        let automation_manager = AutomationManager::new(
-            auto_indexer.clone(),
-            None, // extractor由单独的监听器处理
-            automation_config,
-        )
-        .with_layer_generator(layer_generator.clone()); // 设置LayerGenerator
-
-        // 创建事件转发器（将主EventBus的事件转发给两个监听器）
-        let (tx_automation, rx_automation) = tokio::sync::mpsc::unbounded_channel();
-        let (tx_extractor, rx_extractor) = tokio::sync::mpsc::unbounded_channel();
-
-        tokio::spawn(async move {
-            while let Some(event) = event_rx_main.recv().await {
-                // 转发给AutomationManager
-                let _ = tx_automation.send(event.clone());
-                // 转发给AutoExtractor监听器
-                let _ = tx_extractor.send(event);
-            }
-        });
-
-        // 启动AutomationManager监听事件并自动索引
-        let tenant_id_for_automation = tenant_id.clone();
-        tokio::spawn(async move {
-            tracing::info!(
-                "Starting AutomationManager for tenant {}",
-                tenant_id_for_automation
-            );
-            if let Err(e) = automation_manager.start(rx_automation).await {
-                tracing::error!("AutomationManager stopped with error: {}", e);
-            }
-        });
-
-        // 启动后台监听器处理SessionClosed事件
-        let extractor_clone = auto_extractor.clone();
-        let tenant_id_clone = tenant_id.clone();
-        tokio::spawn(async move {
-            tracing::info!(
-                "Starting AutoExtractor event listener for tenant {}",
-                tenant_id_clone
-            );
-            let mut rx = rx_extractor;
-            while let Some(event) = rx.recv().await {
-                if let cortex_mem_core::CortexEvent::Session(session_event) = event {
-                    match session_event {
-                        cortex_mem_core::SessionEvent::Closed { session_id } => {
-                            tracing::info!("Session closed event received: {}", session_id);
-                            match extractor_clone.extract_session(&session_id).await {
-                                Ok(stats) => {
-                                    tracing::info!(
-                                        "Extraction completed for session {}: {:?}",
-                                        session_id,
-                                        stats
-                                    );
-                                }
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Extraction failed for session {}: {}",
-                                        session_id,
-                                        e
-                                    );
-                                }
-                            }
-                        }
-                        _ => {} // 忽略其他事件
-                    }
-                }
-            }
-        });
 
         // Auto-sync existing content to vector database (in background)
         let sync_manager = SyncManager::new(
@@ -357,11 +279,9 @@ impl MemoryOperations {
             session_manager,
             layer_manager,
             vector_engine,
-            auto_extractor: Some(auto_extractor),
-            layer_generator: Some(layer_generator), // 保存LayerGenerator用于退出时生成
-            auto_indexer: Some(auto_indexer),       // 保存AutoIndexer用于退出时索引
+            layer_generator: Some(layer_generator),
+            auto_indexer: Some(auto_indexer),
 
-            // 保存组件引用以便退出时索引使用
             embedding_client,
             vector_store,
             llm_client,
@@ -369,10 +289,7 @@ impl MemoryOperations {
             default_user_id: actual_user_id,
             default_agent_id: tenant_id.clone(),
 
-            // v2.5: 保存事件发送器
             memory_event_tx: Some(memory_event_tx),
-
-            // v2.5: 保存事件协调器引用，用于等待后台任务完成
             event_coordinator: Some(coordinator_clone),
         })
     }
@@ -509,11 +426,62 @@ impl MemoryOperations {
         })
     }
 
-    /// Close session
+    /// Close session (fire-and-forget).
+    ///
+    /// Sends a `SessionClosed` event to `MemoryEventCoordinator` via channel.
+    /// Memory extraction and L0/L1 generation happen **asynchronously** in the
+    /// background; this method returns before they complete.
+    ///
+    /// Use `close_session_sync` in exit/shutdown flows where you need to wait.
     pub async fn close_session(&self, thread_id: &str) -> Result<()> {
         let mut sm = self.session_manager.write().await;
         sm.close_session(thread_id).await?;
         tracing::info!("Closed session: {}", thread_id);
+        Ok(())
+    }
+
+    /// Close session and synchronously wait for the full processing pipeline.
+    ///
+    /// Blocks until:
+    /// 1. Session metadata → marked closed (EventBus `SessionClosed` published)
+    /// 2. LLM memory extraction from session timeline
+    /// 3. user/agent memory files written
+    /// 4. L0/L1 layer files generated for all affected directories
+    /// 5. Session timeline synced to vector store
+    ///
+    /// Suitable for shutdown/exit flows. After this returns you can call
+    /// `index_all_files` knowing all L0/L1 files are already on disk.
+    pub async fn close_session_sync(&self, thread_id: &str) -> Result<()> {
+        // 1. Mark session as closed (metadata + legacy EventBus event)
+        let metadata = {
+            let mut sm = self.session_manager.write().await;
+            sm.close_session_metadata_only(thread_id).await?
+        };
+
+        let user_id = metadata.user_id.as_deref().unwrap_or("default");
+        let agent_id = metadata.agent_id.as_deref().unwrap_or("default");
+
+        tracing::info!(
+            "Session {} marked closed, starting synchronous processing (user={}, agent={})...",
+            thread_id, user_id, agent_id
+        );
+
+        // 2. Run the full processing pipeline synchronously via coordinator
+        if let Some(ref coordinator) = self.event_coordinator {
+            coordinator
+                .process_session_closed(thread_id, user_id, agent_id)
+                .await?;
+            tracing::info!(
+                "Session {} processing complete (memory extraction + L0/L1 generated)",
+                thread_id
+            );
+        } else {
+            tracing::warn!(
+                "MemoryEventCoordinator not initialized; session {} processing skipped",
+                thread_id
+            );
+        }
+
         Ok(())
     }
 
@@ -714,21 +682,10 @@ impl MemoryOperations {
         }
     }
 
-    /// 等待所有后台异步任务完成
+    /// 等待所有后台异步任务完成（用于长时间服务等待）
     ///
-    /// 这个方法会等待 MemoryEventCoordinator 处理完所有待处理的事件。
-    /// 由于 SessionClosed 事件会触发 LLM 调用（记忆提取 + 层级生成），
-    /// 这个方法会等待足够长的时间让这些操作完成。
-    ///
-    /// # Arguments
-    /// * `max_wait_secs` - 最大等待时间（秒）
-    ///
-    /// # Returns
-    /// 返回是否成功完成（true = 完成，false = 超时）
-    ///
-    /// # Note
-    /// v2.5 改进：使用真正的事件通知机制等待后台任务完成
-    /// 而不是基于时间的启发式等待
+    /// 使用真正的事件通知机制等待，而非固定超时。
+    /// 在退出流程中建议优先使用 `close_session_sync`。
     pub async fn wait_for_background_tasks(&self, max_wait_secs: u64) -> bool {
         use std::time::Duration;
 
@@ -745,18 +702,11 @@ impl MemoryOperations {
         }
     }
 
-    /// 刷新并等待所有后台任务完成（用于退出流程）
+    /// Wait for MemoryEventCoordinator to drain all pending events (deprecated-style polling).
     ///
-    /// 这个方法会：
-    /// 1. 等待当前正在处理的事件完成
-    /// 2. 强制处理 debouncer 中所有待处理的层级更新
-    /// 3. 再次等待确保所有更新完成
-    ///
-    /// 使用事件通知机制而非固定超时，确保真正等待任务完成。
-    /// 由于涉及 LLM 调用，可能需要较长时间。
-    ///
-    /// # Arguments
-    /// * `check_interval_secs` - 检查间隔（秒），默认 1 秒
+    /// Prefer `close_session_sync` for exit flows — it blocks until the pipeline
+    /// completes without polling. This method is retained for legacy call-sites
+    /// where fire-and-forget + explicit wait is still needed.
     pub async fn flush_and_wait(&self, check_interval_secs: Option<u64>) -> bool {
         let interval = std::time::Duration::from_secs(check_interval_secs.unwrap_or(1));
 

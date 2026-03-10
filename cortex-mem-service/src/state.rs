@@ -11,6 +11,7 @@ use tokio::sync::RwLock;
 pub struct AppState {
     #[allow(dead_code)]
     pub cortex: Arc<CortexMem>,
+    #[allow(dead_code)]
     pub filesystem: Arc<CortexFilesystem>,
     pub session_manager: Arc<tokio::sync::RwLock<SessionManager>>,
     pub llm_client: Option<Arc<dyn LLMClient>>,

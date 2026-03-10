@@ -804,27 +804,19 @@ impl MemoryMcpService {
 
         let thread_id = &params.0.thread_id;
 
-        match self.operations.close_session(thread_id).await {
+        // Use close_session_sync which blocks until:
+        // 1. Memory extraction (LLM call on session timeline)
+        // 2. user/agent memory files written
+        // 3. L0/L1 layer files generated for all affected directories
+        // 4. Session timeline synced to vector store
+        match self.operations.close_session_sync(thread_id).await {
             Ok(_) => {
-                info!(
-                    "Session closed, waiting for background tasks: {}",
-                    thread_id
-                );
-
-                // Wait for background memory extraction, L0/L1 generation, and indexing to complete
-                let completed = self.operations.flush_and_wait(Some(1)).await;
-
-                let message = if completed {
-                    "Session closed. All background tasks (L0/L1 generation, memory extraction, indexing) completed successfully.".to_string()
-                } else {
-                    "Session closed. Background tasks initiated but may still be in progress."
-                        .to_string()
-                };
+                info!("Session {} closed and fully processed (sync)", thread_id);
 
                 Ok(Json(CloseSessionResult {
                     success: true,
                     thread_id: thread_id.clone(),
-                    message,
+                    message: "Session closed. All processing (memory extraction, L0/L1 generation, vector sync) completed synchronously.".to_string(),
                 }))
             }
             Err(e) => {

@@ -105,18 +105,6 @@ impl MemoryEventCoordinator {
         )
     }
 
-    /// 发送事件到协调器（增加 pending_tasks 计数）
-    ///
-    /// 这个方法应该在发送事件时调用，确保 flush_and_wait 能正确等待事件处理完成
-    pub fn send_event(&self, _event: MemoryEvent) -> Result<()> {
-        // 先增加计数
-        self.pending_tasks.fetch_add(1, Ordering::SeqCst);
-        // 发送事件（通过内部 channel）
-        // 注意：这里需要通过外部保存的 sender 发送
-        // 由于架构限制，这个方法主要用于文档说明正确的使用方式
-        Ok(())
-    }
-
     /// Create a new memory event coordinator with custom config
     pub fn new_with_config(
         filesystem: Arc<CortexFilesystem>,
@@ -684,6 +672,19 @@ impl MemoryEventCoordinator {
         self.vector_sync.sync_layer_files(directory_uri).await?;
 
         Ok(())
+    }
+
+    /// 同步处理 session 关闭：记忆提取 → user/agent 文件写入 → L0/L1 生成 → 向量同步
+    ///
+    /// 调用方 `.await` 后可保证所有副作用已完成，不存在异步竞争。
+    /// 供 `MemoryOperations::close_session_sync` 直接调用，无需经过 channel。
+    pub async fn process_session_closed(
+        &self,
+        session_id: &str,
+        user_id: &str,
+        agent_id: &str,
+    ) -> Result<()> {
+        self.on_session_closed(session_id, user_id, agent_id).await
     }
 
     /// Handle session closed event (the main trigger for memory extraction)

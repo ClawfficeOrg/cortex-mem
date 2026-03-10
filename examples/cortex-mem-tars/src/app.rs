@@ -18,8 +18,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
-// 🔧 移除未使用的导入
-// use cortex_mem_core::automation::{AutoExtractor, AutoExtractConfig};
+// use cortex_mem_core::automation::{AutoExtractor, AutoExtractConfig}; // removed in v2.5
 
 // 音频相关导入
 use crate::audio_input;
@@ -33,9 +32,8 @@ pub struct App {
     ui: AppUi,
     current_bot: Option<BotConfig>,
     rig_agent: Option<RigAgent<CompletionModel>>,
-    tenant_operations: Option<Arc<MemoryOperations>>, // 租户隔离的 operations
-    // auto_extractor已移除 - 由Cortex Memory统一管理
-    current_session_id: Option<String>, // 当前会话ID
+    tenant_operations: Option<Arc<MemoryOperations>>,
+    current_session_id: Option<String>,
     infrastructure: Option<Arc<Infrastructure>>,
     user_id: String,
     user_info: Option<String>,
@@ -96,9 +94,8 @@ impl App {
             ui,
             current_bot: None,
             rig_agent: None,
-            tenant_operations: None, // 初始化为 None，在选择 Bot 时创建
-            // auto_extractor已移除 - 由Cortex Memory统一管理
-            current_session_id: None, // 初始化为 None，在开始对话时创建
+            tenant_operations: None,
+            current_session_id: None,
             infrastructure,
             user_id: "tars_user".to_string(),
             user_info: None,
@@ -1068,61 +1065,23 @@ impl App {
             let _ = self.disable_audio_input().await;
         }
 
-        // 🔧 修复：使用close_session代替直接调用extract_session
         if let (Some(tenant_ops), Some(session_id)) =
             (&self.tenant_operations, &self.current_session_id)
         {
-            log::info!("🧠 开始关闭会话并提取记忆...");
-
-            // 关闭会话（会触发timeline层生成和memory extraction）
-            let session_manager = tenant_ops.session_manager().clone();
-            match session_manager
-                .write()
-                .await
-                .close_session(session_id)
-                .await
-            {
+            // 同步关闭会话：等待记忆提取 + user/agent 文件写入 + L0/L1 生成全部完成后才返回
+            log::info!("🧠 同步关闭会话，等待记忆提取与层级文件生成完成...");
+            match tenant_ops.close_session_sync(session_id).await {
                 Ok(_) => {
-                    log::info!("✅ 会话已关闭，SessionClosed 事件已发送");
+                    log::info!("✅ 会话已关闭，记忆提取与 L0/L1 生成完成");
                 }
                 Err(e) => {
                     log::warn!("⚠️ 会话关闭失败: {}", e);
                 }
             }
 
-            // 🔧 v2.5: 刷新并等待所有后台任务完成
-            // 这会：
-            // 1. 等待事件处理完成（包括记忆提取）
-            // 2. 刷新 debouncer 中的待处理层级更新
-            // 3. 再次等待确保所有更新完成
-            // 使用真正的事件通知机制，不使用固定超时
-            log::info!("⏳ 刷新并等待所有后台任务完成...");
-            let completed = tenant_ops.flush_and_wait(Some(1)).await;
-            if !completed {
-                log::warn!("⚠️ flush_and_wait 返回 false，可能有任务未完成");
-            }
-
-            // 退出时生成所有缺失的 L0/L1 层级文件
-            // ensure_all_layers 已经会扫描所有维度
-            log::info!("📑 开始生成所有缺失的 L0/L1 层级文件...");
-            match tenant_ops.ensure_all_layers().await {
-                Ok(stats) => {
-                    log::info!(
-                        "✅ 层级文件生成完成: 总计 {}, 成功 {}, 失败 {}",
-                        stats.total,
-                        stats.generated,
-                        stats.failed
-                    );
-                }
-                Err(e) => {
-                    log::warn!("⚠️ 层级文件生成失败: {}", e);
-                }
-            }
-
-            // 退出时索引所有文件到向量数据库
-            // 🔧 添加超时保护，避免因 Qdrant 或 Embedding 服务不可用而卡住
+            // 索引所有文件到向量数据库（此时 L0/L1 已全部生成，索引数据完整）
             log::info!("📊 开始索引所有文件到向量数据库...");
-            let index_timeout = tokio::time::Duration::from_secs(120);
+            let index_timeout = tokio::time::Duration::from_secs(360);
             match tokio::time::timeout(index_timeout, tenant_ops.index_all_files()).await {
                 Ok(Ok(stats)) => {
                     log::info!(

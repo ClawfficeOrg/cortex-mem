@@ -61,7 +61,6 @@ pub mod types;
 pub mod automation;
 pub mod builder;
 pub mod embedding;
-pub mod extraction;
 pub mod filesystem;
 pub mod layers;
 pub mod llm;
@@ -89,12 +88,11 @@ pub use events::{CortexEvent, EventBus, FilesystemEvent, SessionEvent};
 pub use types::*;
 
 pub use automation::{
-    AutoExtractConfig, AutoExtractor, AutoIndexer, AutomationConfig, AutomationManager, FsWatcher,
-    IndexStats, IndexerConfig, SyncConfig, SyncManager, SyncStats, WatcherConfig,
+    AutoIndexer, AutomationConfig, AutomationManager,
+    IndexStats, IndexerConfig, SyncConfig, SyncManager, SyncStats,
 };
 pub use builder::{CortexMem, CortexMemBuilder};
-pub use extraction::ExtractionConfig;
-// Note: MemoryExtractor is also exported from session module
+// Note: MemoryExtractor is exported from session module
 pub use embedding::{EmbeddingClient, EmbeddingConfig};
 pub use filesystem::{CortexFilesystem, FilesystemOperations};
 pub use llm::LLMClient;
