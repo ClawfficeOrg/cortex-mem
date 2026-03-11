@@ -1097,12 +1097,22 @@ impl App {
         {
             // 同步关闭会话：等待记忆提取 + user/agent 文件写入 + L0/L1 生成全部完成后才返回
             log::info!("🧠 同步关闭会话，等待记忆提取与层级文件生成完成...");
-            match tenant_ops.close_session_sync(session_id).await {
-                Ok(_) => {
-                    log::info!("✅ 会话已关闭，记忆提取与 L0/L1 生成完成");
-                }
-                Err(e) => {
-                    log::warn!("⚠️ 会话关闭失败: {}", e);
+
+            // 先检查 session 是否实际存在（若用户未发送任何消息，session 可能从未被创建）
+            let session_exists = tenant_ops.exists(&format!("cortex://session/{}/.session.json", session_id))
+                .await
+                .unwrap_or(false);
+
+            if !session_exists {
+                log::info!("ℹ️ 会话 {} 未创建过（本次无消息），跳过关闭流程", session_id);
+            } else {
+                match tenant_ops.close_session_sync(session_id).await {
+                    Ok(_) => {
+                        log::info!("✅ 会话已关闭，记忆提取与 L0/L1 生成完成");
+                    }
+                    Err(e) => {
+                        log::warn!("⚠️ 会话关闭失败: {}", e);
+                    }
                 }
             }
 

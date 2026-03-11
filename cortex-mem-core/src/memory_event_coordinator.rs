@@ -718,6 +718,34 @@ impl MemoryEventCoordinator {
                 "User memory updated for session {}: {} created, {} updated",
                 session_id, user_result.created, user_result.updated
             );
+
+            // 2b. Synchronously generate L0/L1 for user and agent directories.
+            //
+            // `update_memories` writes files and emits MemoryCreated/MemoryUpdated events via
+            // `event_tx`, but those events are handled by the background loop *asynchronously*.
+            // Since `on_session_closed` is called synchronously (without waiting for the loop),
+            // the background handler hasn't run yet — so L0/L1 files would not be generated
+            // until the next background iteration, which may happen after the process exits.
+            //
+            // Fix: call `layer_updater.update_all_layers` directly here so that L0/L1 is
+            // generated before we return.
+            info!("Generating L0/L1 for user/{} after memory extraction...", user_id);
+            if let Err(e) = self.layer_updater
+                .update_all_layers(&crate::memory_index::MemoryScope::User, user_id)
+                .await
+            {
+                warn!("Failed to update user L0/L1 layers: {}", e);
+            }
+
+            if !extracted.cases.is_empty() {
+                info!("Generating L0/L1 for agent/{} after case memory extraction...", agent_id);
+                if let Err(e) = self.layer_updater
+                    .update_all_layers(&crate::memory_index::MemoryScope::Agent, agent_id)
+                    .await
+                {
+                    warn!("Failed to update agent L0/L1 layers: {}", e);
+                }
+            }
         } else {
             info!("No memories extracted from session {}", session_id);
         }
@@ -878,6 +906,31 @@ impl MemoryEventCoordinator {
 
         format!(
             r#"Analyze the following conversation and extract memories in JSON format.
+
+## CRITICAL LANGUAGE RULES
+
+1. **Language Consistency** (MANDATORY):
+   - Extract memories in the SAME language as the conversation
+   - If conversation is in Chinese (中文) → memories MUST be in Chinese
+   - If conversation is in English → memories in English
+   - If mixed language → use the dominant language (>60% of content)
+   - **DO NOT translate** the conversation content into another language
+
+2. **Preserve Technical Terms** (MANDATORY):
+   - Keep technical terminology unchanged in their original language
+   - Programming languages: Rust, Python, TypeScript, JavaScript, Go
+   - Frameworks: Cortex Memory, Rig, React, Vue
+   - Personality types: INTJ, ENTJ, MBTI, DISC
+   - Proper nouns: names, companies, projects
+   - Acronyms: LLM, AI, ML, API, HTTP, REST
+
+3. **Examples**:
+   ✅ CORRECT (Chinese conversation):
+   - "Cortex Memory 是基于 Rust 的长期记忆系统"
+   - "用户喜欢吃牛肉汉堡，搭配酸黄瓜、芝士和可乐"
+
+   ❌ WRONG (Chinese conversation, should NOT translate to English):
+   - "User likes beef burgers with pickles, cheese, and coke"
 
 ## Instructions
 
