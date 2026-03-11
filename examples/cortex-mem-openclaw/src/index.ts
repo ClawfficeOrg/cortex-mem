@@ -29,58 +29,75 @@ import { toolSchemas, type CortexSearchInput, type CortexRecallInput, type Corte
 
 // Plugin configuration
 interface PluginConfig {
-  serviceUrl: string;
-  defaultSessionId: string;
-  searchLimit: number;
-  minScore: number;
+  serviceUrl?: string;
+  defaultSessionId?: string;
+  searchLimit?: number;
+  minScore?: number;
 }
 
-// OpenClaw Plugin API types (minimal definitions)
-interface PluginAPI {
-  getConfig(): PluginConfig;
-  registerTool(tool: ToolDefinition): void;
-  logger: {
-    info: (msg: string, ...args: unknown[]) => void;
-    warn: (msg: string, ...args: unknown[]) => void;
-    error: (msg: string, ...args: unknown[]) => void;
-  };
+// OpenClaw Plugin API types — aligned with OpenClawPluginApi in openclaw/src/plugins/types.ts
+interface PluginLogger {
+  debug?: (msg: string, ...args: unknown[]) => void;
+  info: (msg: string, ...args: unknown[]) => void;
+  warn: (msg: string, ...args: unknown[]) => void;
+  error: (msg: string, ...args: unknown[]) => void;
 }
 
 interface ToolDefinition {
   name: string;
   description: string;
-  inputSchema: object;
-  handler: (args: Record<string, unknown>) => Promise<ToolResult>;
+  /**
+   * JSON Schema for tool inputs.
+   * OpenClaw uses 'parameters', NOT 'inputSchema'.
+   */
+  parameters: object;
+  /**
+   * Tool execution function.
+   * OpenClaw uses 'execute(_id, params)', NOT 'handler(args)'.
+   */
+  execute: (_id: string, params: Record<string, unknown>) => Promise<unknown>;
+  /** Optional: mark tool as opt-in (not auto-enabled) */
+  optional?: boolean;
 }
 
-interface ToolResult {
-  content?: string;
-  error?: string;
-  [key: string]: unknown;
+// Matches OpenClawPluginApi interface
+interface PluginAPI {
+  /**
+   * Plugin-specific configuration from openclaw.json
+   * Access via api.pluginConfig, NOT api.getConfig()
+   */
+  pluginConfig?: Record<string, unknown>;
+  registerTool(tool: ToolDefinition, opts?: { optional?: boolean }): void;
+  logger: PluginLogger;
 }
 
-// Export plugin
+// Export plugin as a default function — matches OpenClaw's resolvePluginModuleExport behavior
 export default function cortexMemPlugin(api: PluginAPI) {
-  const config = api.getConfig();
-  const client = new CortexMemClient(config.serviceUrl);
+  const config = (api.pluginConfig ?? {}) as PluginConfig;
+  const serviceUrl = config.serviceUrl ?? 'http://127.0.0.1:8085';
+  const defaultSessionId = config.defaultSessionId ?? 'default';
+  const searchLimit = config.searchLimit ?? 10;
+  const minScore = config.minScore ?? 0.6;
+
+  const client = new CortexMemClient(serviceUrl);
 
   api.logger.info('Cortex Memory plugin initializing...');
-  api.logger.info(`Service URL: ${config.serviceUrl}`);
+  api.logger.info(`Service URL: ${serviceUrl}`);
 
   // Register cortex_search tool
   api.registerTool({
     name: toolSchemas.cortex_search.name,
     description: toolSchemas.cortex_search.description,
-    inputSchema: toolSchemas.cortex_search.inputSchema,
-    handler: async (args: Record<string, unknown>) => {
-      const input = args as CortexSearchInput;
+    parameters: toolSchemas.cortex_search.inputSchema,
+    execute: async (_id: string, params: Record<string, unknown>) => {
+      const input = params as CortexSearchInput;
 
       try {
         const results = await client.search({
           query: input.query,
           thread: input.scope,
-          limit: input.limit ?? config.searchLimit,
-          min_score: input.min_score ?? config.minScore,
+          limit: input.limit ?? searchLimit,
+          min_score: input.min_score ?? minScore,
         });
 
         const formattedResults = results
@@ -108,9 +125,9 @@ export default function cortexMemPlugin(api: PluginAPI) {
   api.registerTool({
     name: toolSchemas.cortex_recall.name,
     description: toolSchemas.cortex_recall.description,
-    inputSchema: toolSchemas.cortex_recall.inputSchema,
-    handler: async (args: Record<string, unknown>) => {
-      const input = args as CortexRecallInput;
+    parameters: toolSchemas.cortex_recall.inputSchema,
+    execute: async (_id: string, params: Record<string, unknown>) => {
+      const input = params as CortexRecallInput;
 
       try {
         const results = await client.recall(
@@ -163,21 +180,21 @@ export default function cortexMemPlugin(api: PluginAPI) {
   api.registerTool({
     name: toolSchemas.cortex_add_memory.name,
     description: toolSchemas.cortex_add_memory.description,
-    inputSchema: toolSchemas.cortex_add_memory.inputSchema,
-    handler: async (args: Record<string, unknown>) => {
-      const input = args as CortexAddMemoryInput;
+    parameters: toolSchemas.cortex_add_memory.inputSchema,
+    execute: async (_id: string, params: Record<string, unknown>) => {
+      const input = params as CortexAddMemoryInput;
 
       try {
-        const sessionId = input.session_id ?? config.defaultSessionId;
-        const messageUri = await client.addMessage(sessionId, {
+        const sessionId = input.session_id ?? defaultSessionId;
+        const result = await client.addMessage(sessionId, {
           role: input.role ?? 'user',
           content: input.content,
         });
 
         return {
-          content: `Memory stored successfully in session "${sessionId}".\nURI: ${messageUri}`,
+          content: `Memory stored successfully in session "${sessionId}".\nResult: ${result}`,
           success: true,
-          message_uri: messageUri,
+          message_uri: result,
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -191,8 +208,8 @@ export default function cortexMemPlugin(api: PluginAPI) {
   api.registerTool({
     name: toolSchemas.cortex_list_sessions.name,
     description: toolSchemas.cortex_list_sessions.description,
-    inputSchema: toolSchemas.cortex_list_sessions.inputSchema,
-    handler: async () => {
+    parameters: toolSchemas.cortex_list_sessions.inputSchema,
+    execute: async (_id: string, _params: Record<string, unknown>) => {
       try {
         const sessions = await client.listSessions();
 
@@ -233,7 +250,7 @@ export default function cortexMemPlugin(api: PluginAPI) {
   };
 }
 
-// Also support object export style
+// Also support object export style (register method calls the default function above)
 export const plugin = {
   id: 'cortex-mem',
   name: 'Cortex Memory',

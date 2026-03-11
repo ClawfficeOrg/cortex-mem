@@ -4,7 +4,6 @@
   "version": "0.1.0",
   "description": "Layered semantic memory with L0/L1/L2 tiered retrieval for OpenClaw agents",
   "kind": "memory",
-  "entry": "dist/index.js",
   "configSchema": {
     "type": "object",
     "properties": {
@@ -52,11 +51,5 @@
       "label": "Minimum Score",
       "description": "Filter results below this relevance threshold"
     }
-  },
-  "tools": [
-    "cortex_search",
-    "cortex_recall",
-    "cortex_add_memory",
-    "cortex_list_sessions"
-  ]
+  }
 }
