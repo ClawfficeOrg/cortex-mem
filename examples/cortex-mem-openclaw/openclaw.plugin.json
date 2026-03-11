@@ -1,0 +1,62 @@
+{
+  "id": "cortex-mem",
+  "name": "Cortex Memory",
+  "version": "0.1.0",
+  "description": "Layered semantic memory with L0/L1/L2 tiered retrieval for OpenClaw agents",
+  "kind": "memory",
+  "entry": "dist/index.js",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "serviceUrl": {
+        "type": "string",
+        "description": "Cortex Memory service URL",
+        "default": "http://127.0.0.1:8085"
+      },
+      "defaultSessionId": {
+        "type": "string",
+        "description": "Default session ID for memory operations (defaults to 'default')",
+        "default": "default"
+      },
+      "searchLimit": {
+        "type": "integer",
+        "description": "Default number of search results",
+        "default": 10,
+        "minimum": 1,
+        "maximum": 50
+      },
+      "minScore": {
+        "type": "number",
+        "description": "Minimum relevance score for search results",
+        "default": 0.6,
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "required": ["serviceUrl"]
+  },
+  "uiHints": {
+    "serviceUrl": {
+      "label": "Service URL",
+      "description": "The HTTP endpoint of your cortex-mem-service instance"
+    },
+    "defaultSessionId": {
+      "label": "Default Session",
+      "description": "Session ID to use when no thread is specified"
+    },
+    "searchLimit": {
+      "label": "Search Limit",
+      "description": "Maximum number of results to return from search"
+    },
+    "minScore": {
+      "label": "Minimum Score",
+      "description": "Filter results below this relevance threshold"
+    }
+  },
+  "tools": [
+    "cortex_search",
+    "cortex_recall",
+    "cortex_add_memory",
+    "cortex_list_sessions"
+  ]
+}
