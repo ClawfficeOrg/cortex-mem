@@ -172,17 +172,17 @@ impl MemoryExtractor {
             return Ok(ExtractedMemories::default());
         }
 
-        tracing::info!("🧠 开始从 {} 条消息中提取记忆", messages.len());
+        tracing::info!("Starting memory extraction from {} messages", messages.len());
 
         let prompt = self.build_extraction_prompt(messages);
-        tracing::debug!("📝 记忆提取 prompt 长度: {} 字符", prompt.len());
+        tracing::debug!("Memory extraction prompt length: {} chars", prompt.len());
 
         let response = self.llm_client.complete(&prompt).await?;
 
         let memories = self.parse_extraction_response(&response)?;
 
         tracing::info!(
-            "✅ 记忆提取完成: 偏好={}, 实体={}, 事件={}, 案例={}, 个人信息={}, 工作经历={}, 关系={}, 目标={}",
+            "Memory extraction completed: preferences={}, entities={}, events={}, cases={}, personal_info={}, work_history={}, relationships={}, goals={}",
             memories.preferences.len(),
             memories.entities.len(),
             memories.events.len(),

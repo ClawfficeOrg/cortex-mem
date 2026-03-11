@@ -100,26 +100,25 @@ impl LayerGenerator {
         for scope in &["session", "user", "agent", "resources"] {
             let scope_uri = format!("cortex://{}", scope);
 
-            // 检查维度是否存在
+            // Check if scope exists
             match self.filesystem.exists(&scope_uri).await {
                 Ok(true) => {
-                    log::info!("📂 扫描维度: {} ({})", scope, scope_uri);
+                    debug!("Scanning scope: {}", scope);
                     match self.scan_scope(&scope_uri).await {
                         Ok(dirs) => {
-                            log::info!("📂 维度 {} 发现 {} 个目录", scope, dirs.len());
+                            debug!("Scope {} found {} directories", scope, dirs.len());
                             directories.extend(dirs);
                         }
                         Err(e) => {
-                            log::warn!("⚠️ 扫描维度 {} 失败: {}", scope, e);
                             warn!("Failed to scan scope {}: {}", scope, e);
                         }
                     }
                 }
                 Ok(false) => {
-                    log::info!("📂 维度 {} 不存在，跳过", scope);
+                    debug!("Scope {} does not exist, skipping", scope);
                 }
                 Err(e) => {
-                    log::warn!("⚠️ 检查维度 {} 存在性失败: {}", scope, e);
+                    warn!("Failed to check scope {} existence: {}", scope, e);
                 }
             }
         }
@@ -127,35 +126,32 @@ impl LayerGenerator {
         Ok(directories)
     }
 
-    /// 扫描单个维度
+    /// Scan a single scope
     async fn scan_scope(&self, scope_uri: &str) -> Result<Vec<String>> {
         let mut directories = Vec::new();
         
-        // 先检查维度是否存在
+        // First check if scope exists
         match self.filesystem.exists(scope_uri).await {
             Ok(true) => {
-                log::info!("📂 维度目录存在: {}", scope_uri);
+                debug!("Scope directory exists: {}", scope_uri);
             }
             Ok(false) => {
-                log::info!("📂 维度目录不存在: {}", scope_uri);
+                debug!("Scope directory does not exist: {}", scope_uri);
                 return Ok(directories);
             }
             Err(e) => {
-                log::warn!("⚠️ 检查维度存在性失败: {} - {}", scope_uri, e);
+                warn!("Failed to check scope existence: {} - {}", scope_uri, e);
                 return Ok(directories);
             }
         }
         
-        // 尝试列出目录内容
+        // Try to list directory contents
         match self.filesystem.list(scope_uri).await {
             Ok(entries) => {
-                log::info!("📂 维度 {} 下有 {} 个条目", scope_uri, entries.len());
-                for entry in &entries {
-                    log::info!("📂   - {} (is_dir: {})", entry.name, entry.is_directory);
-                }
+                debug!("Scope {} has {} entries", scope_uri, entries.len());
             }
             Err(e) => {
-                log::warn!("⚠️ 列出维度目录失败: {} - {}", scope_uri, e);
+                warn!("Failed to list scope directory: {} - {}", scope_uri, e);
                 return Ok(directories);
             }
         }
@@ -230,31 +226,18 @@ impl LayerGenerator {
         Ok(missing)
     }
 
-    /// 确保所有目录拥有 L0/L1
+    /// Ensure all directories have L0/L1
     pub async fn ensure_all_layers(&self) -> Result<GenerationStats> {
-        log::info!("🔍 开始扫描目录...");
-        info!("开始扫描目录...");
+        info!("Scanning directories for missing L0/L1 layers...");
         let directories = self.scan_all_directories().await?;
-        log::info!("📋 发现 {} 个目录", directories.len());
-        info!("发现 {} 个目录", directories.len());
+        debug!("Found {} directories", directories.len());
         
-        // 🔧 Debug: 打印扫描到的目录
         for dir in &directories {
-            log::debug!("扫描到目录: {}", dir);
-            debug!("扫描到目录: {}", dir);
+            debug!("Scanned directory: {}", dir);
         }
 
-        log::info!("🔎 检测缺失的 L0/L1...");
-        info!("检测缺失的 L0/L1...");
         let missing = self.filter_missing_layers(&directories).await?;
-        log::info!("📋 发现 {} 个目录缺失 L0/L1", missing.len());
-        info!("发现 {} 个目录缺失 L0/L1", missing.len());
-        
-        // 🔧 Debug: 打印缺失层级文件的目录
-        for dir in &missing {
-            log::info!("📝 需要生成层级文件: {}", dir);
-            info!("需要生成层级文件: {}", dir);
-        }
+        info!("Found {} directories missing L0/L1", missing.len());
 
         if missing.is_empty() {
             return Ok(GenerationStats {
@@ -270,53 +253,49 @@ impl LayerGenerator {
             failed: 0,
         };
 
-        // 分批生成
+        // Generate in batches
         let total_batches = (missing.len() + self.config.batch_size - 1) / self.config.batch_size;
 
         for (batch_idx, batch) in missing.chunks(self.config.batch_size).enumerate() {
-            log::info!("📦 处理批次 {}/{}", batch_idx + 1, total_batches);
-            info!("处理批次 {}/{}", batch_idx + 1, total_batches);
+            debug!("Processing batch {}/{}", batch_idx + 1, total_batches);
 
             for dir in batch {
                 match self.generate_layers_for_directory(dir).await {
                     Ok(_) => {
                         stats.generated += 1;
-                        log::info!("✅ 生成成功: {}", dir);
-                        info!("✓ 生成成功: {}", dir);
+                        debug!("Generated: {}", dir);
                     }
                     Err(e) => {
                         stats.failed += 1;
-                        log::warn!("⚠️ 生成失败: {} - {}", dir, e);
-                        warn!("✗ 生成失败: {} - {}", dir, e);
+                        warn!("Failed to generate for {}: {}", dir, e);
                     }
                 }
             }
 
-            // 批次间延迟
+            // Delay between batches
             if batch_idx < total_batches - 1 {
                 tokio::time::sleep(tokio::time::Duration::from_millis(self.config.delay_ms)).await;
             }
         }
 
-        log::info!("✅ 生成完成: 成功 {}, 失败 {}", stats.generated, stats.failed);
-        info!("生成完成: 成功 {}, 失败 {}", stats.generated, stats.failed);
+        info!("Layer generation completed: {} generated, {} failed", stats.generated, stats.failed);
         Ok(stats)
     }
 
-    /// 确保特定timeline目录拥有L0/L1层级文件
-    /// 用于会话关闭时触发生成，避免频繁更新
+    /// Ensure a specific timeline directory has L0/L1 layer files
+    /// Used when session closes to trigger generation, avoiding frequent updates
     pub async fn ensure_timeline_layers(&self, timeline_uri: &str) -> Result<GenerationStats> {
-        info!("开始为timeline生成层级文件: {}", timeline_uri);
+        info!("Starting layer generation for timeline: {}", timeline_uri);
 
-        // 扫描timeline下的所有目录
+        // Scan all directories under timeline
         let mut directories = Vec::new();
         self.scan_recursive(timeline_uri, &mut directories).await?;
 
-        info!("发现 {} 个timeline目录", directories.len());
+        info!("Found {} timeline directories", directories.len());
 
-        // 检测缺失的 L0/L1
+        // Detect missing L0/L1
         let missing = self.filter_missing_layers(&directories).await?;
-        info!("发现 {} 个目录缺失 L0/L1", missing.len());
+        info!("Found {} directories missing L0/L1", missing.len());
 
         if missing.is_empty() {
             return Ok(GenerationStats {
@@ -332,67 +311,67 @@ impl LayerGenerator {
             failed: 0,
         };
 
-        // 生成层级文件（不需要分批，因为timeline通常不大）
+        // Generate layer files (no need to batch, timeline is usually small)
         for dir in missing {
             match self.generate_layers_for_directory(&dir).await {
                 Ok(_) => {
                     stats.generated += 1;
-                    info!("✓ 生成成功: {}", dir);
+                    info!("Generation succeeded: {}", dir);
                 }
                 Err(e) => {
                     stats.failed += 1;
-                    warn!("✗ 生成失败: {} - {}", dir, e);
+                    warn!("Generation failed: {} - {}", dir, e);
                 }
             }
         }
 
         info!(
-            "Timeline层级生成完成: 成功 {}, 失败 {}",
+            "Timeline layer generation completed: {} succeeded, {} failed",
             stats.generated, stats.failed
         );
         Ok(stats)
     }
 
-    /// 为单个目录生成 L0/L1
+    /// Generate L0/L1 for a single directory
     async fn generate_layers_for_directory(&self, uri: &str) -> Result<()> {
-        debug!("生成层级文件: {}", uri);
+        debug!("Generating layer files for: {}", uri);
 
-        // 1. 检查是否需要重新生成（避免重复生成未变更的内容）
+        // 1. Check if regeneration is needed (avoid generating unchanged content)
         if !self.should_regenerate(uri).await? {
-            debug!("目录内容未变更，跳过生成: {}", uri);
+            debug!("Directory content unchanged, skipping generation: {}", uri);
             return Ok(());
         }
 
-        // 2. 读取目录内容（聚合所有子文件）
+        // 2. Read directory content (aggregate all sub-files)
         let content = self.aggregate_directory_content(uri).await?;
 
         if content.is_empty() {
-            debug!("目录为空，跳过: {}", uri);
+            debug!("Directory is empty, skipping: {}", uri);
             return Ok(());
         }
 
-        // 3. 使用现有的 AbstractGenerator 生成 L0 抽象
+        // 3. Use existing AbstractGenerator to generate L0 abstract
         let abstract_text = self
             .abstract_gen
-            .generate_with_llm(&content, &self.llm_client)
+            .generate_with_llm(&content, &self.llm_client, &[])
             .await?;
 
-        // 4. 使用现有的 OverviewGenerator 生成 L1 概览
+        // 4. Use existing OverviewGenerator to generate L1 overview
         let overview = self
             .overview_gen
             .generate_with_llm(&content, &self.llm_client)
             .await?;
 
-        // 5. 强制执行长度限制
+        // 5. Enforce length limits
         let abstract_text = self.enforce_abstract_limit(abstract_text)?;
         let overview = self.enforce_overview_limit(overview)?;
 
-        // 6. 添加 "Added" 日期标记（与 extraction.rs 保持一致）
+        // 6. Add "Added" date marker (consistent with extraction.rs)
         let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
         let abstract_with_date = format!("{}\n\n**Added**: {}", abstract_text, timestamp);
         let overview_with_date = format!("{}\n\n---\n\n**Added**: {}", overview, timestamp);
 
-        // 7. 写入文件
+        // 7. Write files
         let abstract_path = format!("{}/.abstract.md", uri);
         let overview_path = format!("{}/.overview.md", uri);
 
@@ -403,64 +382,64 @@ impl LayerGenerator {
             .write(&overview_path, &overview_with_date)
             .await?;
 
-        debug!("层级文件生成完成: {}", uri);
+        debug!("Layer files generated for: {}", uri);
         Ok(())
     }
 
-    /// 检查是否需要重新生成层级文件
+    /// Check if layer files need to be regenerated
     ///
-    /// 检查逻辑：
-    /// 1. 如果 .abstract.md 或 .overview.md 不存在 → 需要生成
-    /// 2. 如果目录中有文件比 .abstract.md 更新 → 需要重新生成
-    /// 3. 否则 → 跳过（避免重复生成）
+    /// Check logic:
+    /// 1. If .abstract.md or .overview.md doesn't exist → need to generate
+    /// 2. If files in directory are newer than .abstract.md → need to regenerate
+    /// 3. Otherwise → skip (avoid duplicate generation)
     async fn should_regenerate(&self, uri: &str) -> Result<bool> {
         let abstract_path = format!("{}/.abstract.md", uri);
         let overview_path = format!("{}/.overview.md", uri);
 
-        // 检查层级文件是否存在
+        // Check if layer files exist
         let abstract_exists = self.filesystem.exists(&abstract_path).await?;
         let overview_exists = self.filesystem.exists(&overview_path).await?;
 
         if !abstract_exists || !overview_exists {
-            debug!("层级文件缺失，需要生成: {}", uri);
+            debug!("Layer files missing, need to generate: {}", uri);
             return Ok(true);
         }
 
-        // 读取 .abstract.md 中的时间戳
+        // Read timestamp from .abstract.md
         let abstract_content = match self.filesystem.read(&abstract_path).await {
             Ok(content) => content,
             Err(_) => {
-                debug!("无法读取 .abstract.md，需要重新生成: {}", uri);
+                debug!("Cannot read .abstract.md, need to regenerate: {}", uri);
                 return Ok(true);
             }
         };
 
-        // 提取 "Added" 时间戳
+        // Extract "Added" timestamp
         let abstract_timestamp = self.extract_added_timestamp(&abstract_content);
 
         if abstract_timestamp.is_none() {
-            debug!(".abstract.md 缺少时间戳，需要重新生成: {}", uri);
+            debug!(".abstract.md missing timestamp, need to regenerate: {}", uri);
             return Ok(true);
         }
 
         let abstract_time = abstract_timestamp.unwrap();
 
-        // 检查目录中的文件是否有更新
+        // Check if files in directory have updates
         let entries = self.filesystem.list(uri).await?;
         for entry in entries {
-            // 跳过隐藏文件和目录
+            // Skip hidden files and directories
             if entry.name.starts_with('.') || entry.is_directory {
                 continue;
             }
 
-            // 只检查 .md 和 .txt 文件
+            // Only check .md and .txt files
             if entry.name.ends_with(".md") || entry.name.ends_with(".txt") {
-                // 读取文件内容，提取其中的时间戳（如果有）
+                // Read file content, extract timestamp if any
                 if let Ok(file_content) = self.filesystem.read(&entry.uri).await {
                     if let Some(file_time) = self.extract_added_timestamp(&file_content) {
-                        // 如果文件时间戳晚于 abstract 时间戳，需要重新生成
+                        // If file timestamp is later than abstract timestamp, need to regenerate
                         if file_time > abstract_time {
-                            debug!("文件 {} 有更新，需要重新生成: {}", entry.name, uri);
+                            debug!("File {} has updates, need to regenerate: {}", entry.name, uri);
                             return Ok(true);
                         }
                     }
@@ -468,18 +447,18 @@ impl LayerGenerator {
             }
         }
 
-        debug!("目录内容未变更，无需重新生成: {}", uri);
+        debug!("Directory content unchanged, no need to regenerate: {}", uri);
         Ok(false)
     }
 
-    /// 从内容中提取 "Added" 时间戳
+    /// Extract "Added" timestamp from content
     fn extract_added_timestamp(&self, content: &str) -> Option<DateTime<Utc>> {
-        // 查找 "**Added**: YYYY-MM-DD HH:MM:SS UTC" 格式
+        // Find "**Added**: YYYY-MM-DD HH:MM:SS UTC" format
         if let Some(start) = content.find("**Added**: ") {
             let timestamp_str = &content[start + 11..];
             if let Some(end) = timestamp_str.find('\n') {
                 let timestamp_str = &timestamp_str[..end].trim();
-                // 解析时间戳
+                // Parse timestamp
                 if let Ok(dt) = DateTime::parse_from_str(timestamp_str, "%Y-%m-%d %H:%M:%S UTC") {
                     return Some(dt.with_timezone(&Utc));
                 }
@@ -594,9 +573,9 @@ impl LayerGenerator {
         Ok(result)
     }
 
-    /// 重新生成所有超大的 .abstract 文件
+    /// Regenerate all oversized .abstract files
     pub async fn regenerate_oversized_abstracts(&self) -> Result<RegenerationStats> {
-        info!("扫描超大的 .abstract 文件...");
+        info!("Scanning for oversized .abstract files...");
         let directories = self.scan_all_directories().await?;
         let max_chars = self.config.abstract_config.max_chars;
 
@@ -610,13 +589,13 @@ impl LayerGenerator {
             let abstract_path = format!("{}/.abstract.md", dir);
 
             if let Ok(content) = self.filesystem.read(&abstract_path).await {
-                // 移除 "Added" 标记后再检查长度
+                // Remove "Added" marker before checking length
                 let content_without_metadata = self.strip_metadata(&content);
 
                 if content_without_metadata.len() > max_chars {
                     stats.total += 1;
                     info!(
-                        "发现超大 .abstract: {} ({} 字符)",
+                        "Found oversized .abstract: {} ({} chars)",
                         dir,
                         content_without_metadata.len()
                     );
@@ -624,11 +603,11 @@ impl LayerGenerator {
                     match self.generate_layers_for_directory(&dir).await {
                         Ok(_) => {
                             stats.regenerated += 1;
-                            info!("✓ 重新生成成功: {}", dir);
+                            info!("Regeneration succeeded: {}", dir);
                         }
                         Err(e) => {
                             stats.failed += 1;
-                            warn!("✗ 重新生成失败: {} - {}", dir, e);
+                            warn!("Regeneration failed: {} - {}", dir, e);
                         }
                     }
                 }
@@ -636,7 +615,7 @@ impl LayerGenerator {
         }
 
         info!(
-            "重新生成完成: 总计 {}, 成功 {}, 失败 {}",
+            "Regeneration completed: total={}, succeeded={}, failed={}",
             stats.total, stats.regenerated, stats.failed
         );
 

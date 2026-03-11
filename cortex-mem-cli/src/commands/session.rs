@@ -52,27 +52,22 @@ pub async fn create(
     Ok(())
 }
 
-/// Close a session and trigger memory extraction, layer generation, and indexing
+/// Close a session and synchronously wait for memory extraction, L0/L1 generation,
+/// and vector indexing to complete before returning.
 pub async fn close(operations: Arc<MemoryOperations>, thread: &str) -> Result<()> {
     println!("{} Closing session: {}", "🔒".bold(), thread.cyan());
-
-    // Close the session (triggers SessionClosed event → MemoryEventCoordinator)
-    operations.close_session(thread).await?;
-
-    println!("{} Session closed successfully", "✓".green().bold());
-    println!("  {}: {}", "Thread ID".cyan(), thread);
-    println!();
     println!("{} Waiting for memory extraction, L0/L1 generation, and indexing to complete...", "⏳".yellow().bold());
 
-    // Wait for background tasks to complete (max 60 seconds)
-    // This ensures memory extraction, layer generation, and vector indexing finish before CLI exits
-    let completed = operations.flush_and_wait(Some(1)).await;
+    // close_session_sync blocks until the full pipeline completes:
+    // 1. Session metadata → marked closed
+    // 2. LLM memory extraction from session timeline
+    // 3. user/agent memory files written
+    // 4. L0/L1 layer files generated for all affected directories
+    // 5. Session timeline synced to vector store
+    operations.close_session_sync(thread).await?;
 
-    if completed {
-        println!("{} All background tasks completed successfully", "✓".green().bold());
-    } else {
-        println!("{} Background tasks timed out (some may still be processing)", "⚠".yellow().bold());
-    }
+    println!("{} Session closed and all processing completed", "✓".green().bold());
+    println!("  {}: {}", "Thread ID".cyan(), thread);
 
     Ok(())
 }

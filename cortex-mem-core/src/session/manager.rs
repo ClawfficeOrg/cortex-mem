@@ -4,7 +4,7 @@ use crate::{CortexFilesystem, FilesystemOperations, MessageStorage, ParticipantM
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Session status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -192,7 +192,7 @@ pub struct SessionManager {
     config: SessionConfig,
     llm_client: Option<Arc<dyn LLMClient>>,
     event_bus: Option<EventBus>,
-    /// Optional event sender for v2.5 incremental update system
+    /// Optional event sender for incremental update system
     memory_event_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::memory_events::MemoryEvent>>,
 }
 
@@ -274,7 +274,7 @@ impl SessionManager {
         }
     }
     
-    /// Set the memory event sender for v2.5 incremental update system
+    /// Set the memory event sender for incremental update system
     pub fn with_memory_event_tx(mut self, tx: tokio::sync::mpsc::UnboundedSender<crate::memory_events::MemoryEvent>) -> Self {
         self.memory_event_tx = Some(tx);
         self
@@ -326,59 +326,58 @@ impl SessionManager {
         Ok(())
     }
 
-    /// Close a session
-    /// 
-    /// IMPORTANT: Layer generation is now fully asynchronous via MemoryEventCoordinator.
-    /// This method no longer generates layers synchronously to avoid blocking.
-    /// The SessionClosed event will trigger:
-    /// 1. Memory extraction
-    /// 2. Timeline layer generation (L0/L1)
-    /// 3. Vector sync
-    pub async fn close_session(&mut self, thread_id: &str) -> Result<SessionMetadata> {
+    /// Update session metadata to closed state only (no events emitted).
+    ///
+    /// This is a low-level method used by `MemoryOperations::close_session_sync` which
+    /// handles the full processing pipeline synchronously via `MemoryEventCoordinator`.
+    /// Use this instead of `close_session` when you want to await memory extraction
+    /// and L0/L1 generation before returning.
+    pub async fn close_session_metadata_only(&mut self, thread_id: &str) -> Result<SessionMetadata> {
         let mut metadata = self.load_session(thread_id).await?;
         metadata.close();
         self.update_session(&metadata).await?;
 
-        // 🚫 REMOVED: Synchronous layer generation
-        // Layer generation is now handled asynchronously by MemoryEventCoordinator
-        // This prevents blocking and avoids duplicate LLM calls
-        //
-        // Old code that was removed:
-        // if let Some(ref llm_client) = self.llm_client {
-        //     let layer_manager = LayerManager::new(...);
-        //     layer_manager.generate_timeline_layers(&timeline_uri).await?;
-        // }
-
-        // 发布会话关闭事件
+        // Publish close event on the legacy EventBus (for AutomationManager etc.)
         if let Some(ref bus) = self.event_bus {
             let _ = bus.publish(CortexEvent::Session(SessionEvent::Closed {
                 session_id: thread_id.to_string(),
             }));
         }
-        
-        // v2.5: 发送记忆事件给协调器处理（异步）
-        // MemoryEventCoordinator will handle:
-        // 1. Memory extraction from session
-        // 2. Timeline layer generation
-        // 3. Vector sync
+
+        info!("Session {} metadata closed (event emission skipped; caller handles processing)", thread_id);
+        Ok(metadata)
+    }
+
+    /// Close a session and asynchronously trigger memory extraction via channel.
+    ///
+    /// The `SessionClosed` event is sent to the `MemoryEventCoordinator` channel and
+    /// processed in a background task. The caller has **no guarantee** that memory
+    /// extraction or L0/L1 generation has finished when this returns.
+    ///
+    /// Prefer `MemoryOperations::close_session_sync` when you need to await completion
+    /// (e.g., in exit flows). This method is retained for service scenarios where
+    /// fire-and-forget is acceptable.
+    pub async fn close_session(&mut self, thread_id: &str) -> Result<SessionMetadata> {
+        let metadata = self.close_session_metadata_only(thread_id).await?;
+
+        // fire-and-forget via channel
         if let Some(ref tx) = self.memory_event_tx {
             let user_id = metadata.user_id.clone().unwrap_or_else(|| "default".to_string());
             let agent_id = metadata.agent_id.clone().unwrap_or_else(|| "default".to_string());
-            
+
             let _ = tx.send(crate::memory_events::MemoryEvent::SessionClosed {
                 session_id: thread_id.to_string(),
                 user_id: user_id.clone(),
                 agent_id: agent_id.clone(),
             });
-            
+
             info!(
-                "Session {} closed, SessionClosed event sent for async processing (user_id={}, agent_id={})",
+                "Session {} closed, SessionClosed event queued for async processing (user_id={}, agent_id={})",
                 thread_id, user_id, agent_id
             );
         } else {
-            // 使用 log 以便在 tars 中可见
-            log::warn!(
-                "⚠️ memory_event_tx is None, SessionClosed event NOT sent for session {}",
+            warn!(
+                "memory_event_tx is None, SessionClosed event NOT sent for session {}",
                 thread_id
             );
         }

@@ -101,17 +101,18 @@ graph TB
 **Configuration Dependencies**:
 ```rust
 pub struct AutomationConfig {
-    pub auto_index: bool,          // Enable automatic indexing
-    pub auto_extract: bool,        // Enable memory extraction on session close
-    pub index_on_message: bool,    // Index on message add (default: true)
+    pub auto_index: bool,          // Enable automatic indexing (default: true)
+    pub auto_extract: bool,        // Enable memory extraction on session close (default: true)
+    pub index_on_message: bool,    // Index on message add (default: false)
     pub index_on_close: bool,      // Index on session close (default: true)
-    pub poll_interval_secs: u64,   // Filesystem polling frequency (default: 5)
-    pub batch_delay_secs: u64,     // Batching window for indexing (default: 2)
-    pub sync_on_startup: bool,     // Run full sync on system start
+    pub index_batch_delay: u64,    // Batching window seconds for indexing (default: 2)
     pub auto_generate_layers_on_startup: bool,  // Generate L0/L1 on startup (default: false)
-    pub generate_layers_every_n_messages: usize, // Periodic L0/L1 generation (0 = disabled)
+    pub generate_layers_every_n_messages: usize, // Periodic L0/L1 generation (default: 0, disabled)
+    pub max_concurrent_llm_tasks: usize, // Max concurrent LLM tasks (default: 3)
 }
 ```
+
+> **Note**: `AutomationConfig` is a code-level configuration, set programmatically when initializing `AutomationManager`, not loaded from TOML configuration files. This allows integrators to flexibly adjust automation behavior according to their needs.
 
 ### 3.2 File System Watcher (`automation/watcher.rs`)
 
@@ -302,43 +303,33 @@ sequenceDiagram
 
 ### 5.1 Configuration Schema
 
-Automation behavior is controlled via the `[automation]` section in `cortex-mem.toml`:
+Automation behavior is configured through the `AutomationConfig` struct in code. Here is a typical configuration example:
 
-```toml
-[automation]
-# Enable automatic indexing of new files
-auto_index = true
-
-# Enable automatic extraction when sessions close
-auto_extract = true
-
-# Index immediately on message add (recommended for real-time search)
-index_on_message = true
-
-# Generate L0/L1 and index on session close
-index_on_close = true
-
-# Filesystem polling interval in seconds
-poll_interval_secs = 5
-
-# Batch processing delay to group rapid changes
-batch_delay_secs = 2
-
-# Perform full sync on startup
-sync_on_startup = false
-
-# Generate missing L0/L1 layers on startup (can cause startup delay)
-auto_generate_layers_on_startup = false
-
-# Generate L0/L1 every N messages (0 = disabled)
-generate_layers_every_n_messages = 5
-
-# Maximum concurrent indexing operations
-max_concurrent_indexes = 10
-
-# Extraction confidence threshold (0.0 - 1.0)
-extraction_confidence_threshold = 0.7
+```rust
+let automation_config = AutomationConfig {
+    auto_index: true,
+    auto_extract: true,
+    index_on_message: false,     // Performance consideration, default off
+    index_on_close: true,        // Batch index on session close
+    index_batch_delay: 2,        // Batch processing delay (seconds)
+    auto_generate_layers_on_startup: false, // Avoid startup blocking
+    generate_layers_every_n_messages: 5,    // Generate L0/L1 every 5 messages
+    max_concurrent_llm_tasks: 3,            // Limit concurrent LLM calls
+};
 ```
+
+**Configuration Parameters**:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `auto_index` | `true` | Enable automatic vector indexing |
+| `auto_extract` | `true` | Enable memory extraction on session close |
+| `index_on_message` | `false` | Real-time indexing on message add (recommended off for performance) |
+| `index_on_close` | `true` | Batch indexing on session close |
+| `index_batch_delay` | `2` | Batch delay seconds to group rapid changes |
+| `auto_generate_layers_on_startup` | `false` | Generate missing L0/L1 files on startup |
+| `generate_layers_every_n_messages` | `0` | Trigger L0/L1 generation every N messages (0=disabled) |
+| `max_concurrent_llm_tasks` | `3` | Maximum concurrent LLM tasks to prevent API overload |
 
 ### 5.2 Multi-Tenant Considerations
 

@@ -8,6 +8,7 @@ use serde_json::json;
 pub type Result<T> = std::result::Result<T, AppError>;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum AppError {
     Internal(String),
     NotFound(String),

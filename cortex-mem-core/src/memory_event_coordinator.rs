@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::sync::{RwLock, mpsc, watch};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 /// Configuration for event coordinator
 #[derive(Debug, Clone)]
@@ -77,6 +77,15 @@ pub struct MemoryEventCoordinator {
     task_completion_tx: watch::Sender<usize>,
     /// 任务完成接收器（用于外部等待）
     task_completion_rx: watch::Receiver<usize>,
+    /// 抑制后台层级联更新的 scope 集合（格式："scope/owner_id"）。
+    ///
+    /// 当 `on_session_closed` 正在同步执行 `update_all_layers` 时，
+    /// 将对应的 "scope/owner_id" 加入此集合，防止后台 event loop 处理
+    /// MemoryCreated/MemoryUpdated 事件时重复触发级联更新。
+    /// update_all_layers 完成后移除对应条目，恢复正常处理。
+    ///
+    /// 使用 scope-granular 集合而非全局 bool，避免误压制不同 scope 的用户。
+    suppress_layer_cascade_scopes: Arc<tokio::sync::RwLock<std::collections::HashSet<String>>>,
 }
 
 impl MemoryEventCoordinator {
@@ -103,18 +112,6 @@ impl MemoryEventCoordinator {
             vector_store,
             CoordinatorConfig::default(),
         )
-    }
-
-    /// 发送事件到协调器（增加 pending_tasks 计数）
-    ///
-    /// 这个方法应该在发送事件时调用，确保 flush_and_wait 能正确等待事件处理完成
-    pub fn send_event(&self, _event: MemoryEvent) -> Result<()> {
-        // 先增加计数
-        self.pending_tasks.fetch_add(1, Ordering::SeqCst);
-        // 发送事件（通过内部 channel）
-        // 注意：这里需要通过外部保存的 sender 发送
-        // 由于架构限制，这个方法主要用于文档说明正确的使用方式
-        Ok(())
     }
 
     /// Create a new memory event coordinator with custom config
@@ -192,6 +189,7 @@ impl MemoryEventCoordinator {
             pending_tasks,
             task_completion_tx,
             task_completion_rx,
+            suppress_layer_cascade_scopes: Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new())),
         });
 
         (coordinator, event_tx, event_rx)
@@ -300,34 +298,31 @@ impl MemoryEventCoordinator {
     /// * `true` - 所有任务已完成
     /// * `false` - 在等待过程中有新任务产生（通常不应该发生）
     pub async fn flush_and_wait(&self, check_interval: Duration) -> bool {
-        log::info!("🔄 开始刷新并等待所有任务完成...");
+        info!("Flushing and waiting for all tasks...");
 
         let start = std::time::Instant::now();
-        let max_wait = Duration::from_secs(300); // 最大等待 5 分钟
+        let max_wait = Duration::from_secs(300);
 
-        // 阶段0：让出运行时，让事件循环有机会运行
-        // 这是关键：tokio::task::yield_now() 让其他任务有机会执行
-        log::info!("⏳ 阶段0：让出运行时，等待事件被取出...");
+        // Phase 0: Yield runtime to let event loop run
         for i in 0..10 {
             tokio::task::yield_now().await;
             tokio::time::sleep(Duration::from_millis(10)).await;
 
             let pending = self.pending_tasks.load(Ordering::SeqCst);
             if pending > 0 {
-                log::info!("✅ 阶段0完成：检测到 {} 个任务开始处理", pending);
+                debug!("Detected {} pending tasks", pending);
                 break;
             }
 
             if i == 9 {
-                log::info!("ℹ️ 阶段0完成：无待处理任务检测到");
+                debug!("No pending tasks detected");
             }
         }
 
-        // 阶段1：等待当前事件处理完成
+        // Phase 1: Wait for current event processing to complete
         loop {
             let pending = self.pending_tasks.load(Ordering::SeqCst);
             if pending == 0 {
-                // 等待一小段时间，看是否有新事件被取出
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 let pending_after = self.pending_tasks.load(Ordering::SeqCst);
                 if pending_after == 0 {
@@ -336,75 +331,53 @@ impl MemoryEventCoordinator {
                 continue;
             }
 
-            // 检查是否超时
             if start.elapsed() >= max_wait {
-                log::warn!("⚠️ 等待超时，仍有 {} 个任务未完成", pending);
+                warn!("Timeout, {} tasks still pending", pending);
                 return false;
             }
 
-            log::trace!(
-                "⏳ 等待 {} 个事件处理任务完成...（已等待 {:?}）",
-                pending,
-                start.elapsed()
-            );
+            trace!("Waiting for {} tasks... (elapsed: {:?})", pending, start.elapsed());
             tokio::time::sleep(check_interval).await;
         }
-        log::info!("✅ 阶段1完成：事件处理任务已清空");
+        debug!("Event processing tasks cleared");
 
-        // 阶段2：刷新 debouncer 中的待处理更新
+        // Phase 2: Flush pending updates in debouncer
         if let Some(ref debouncer) = self.debouncer {
             let pending_count = debouncer.pending_count().await;
             if pending_count > 0 {
-                log::info!(
-                    "🔄 阶段2：刷新 {} 个 debouncer 待处理更新...",
-                    pending_count
-                );
+                info!("Flushing {} debouncer updates", pending_count);
                 let flushed = debouncer.flush_all(&self.layer_updater).await;
-                log::info!("✅ 阶段2完成：已刷新 {} 个层级更新", flushed);
-            } else {
-                log::info!("✅ 阶段2完成：debouncer 无待处理更新");
+                debug!("Flushed {} layer updates", flushed);
             }
-        } else {
-            log::info!("✅ 阶段2跳过：debouncer 未启用");
         }
 
-        // 阶段3：再次等待，确保 debouncer 刷新产生的任务也完成
+        // Phase 3: Wait for debouncer flush tasks to complete
         loop {
             let pending = self.pending_tasks.load(Ordering::SeqCst);
             if pending == 0 {
                 break;
             }
 
-            // 检查是否超时
             if start.elapsed() >= max_wait {
-                log::warn!("⚠️ 等待超时，仍有 {} 个任务未完成", pending);
+                warn!("Timeout, {} tasks still pending", pending);
                 return false;
             }
 
-            log::info!(
-                "⏳ 等待 {} 个刷新后任务完成...（已等待 {:?}）",
-                pending,
-                start.elapsed()
-            );
             tokio::time::sleep(check_interval).await;
         }
-        log::info!("✅ 阶段3完成：所有任务已清空");
 
-        log::info!(
-            "🎉 flush_and_wait 完成：所有任务和层级更新已处理（耗时 {:?}）",
-            start.elapsed()
-        );
+        info!("All tasks completed (elapsed: {:?})", start.elapsed());
         true
     }
 
-    /// 等待所有后台任务完成
+    /// Wait for all background tasks to complete
     ///
     /// # Arguments
-    /// * `timeout` - 最大等待时间
+    /// * `timeout` - Maximum wait time
     ///
     /// # Returns
-    /// * `true` - 所有任务已完成
-    /// * `false` - 超时
+    /// * `true` - All tasks completed
+    /// * `false` - Timeout
     pub async fn wait_for_completion(&self, timeout: Duration) -> bool {
         let start = std::time::Instant::now();
         let check_interval = Duration::from_millis(500);
@@ -412,31 +385,25 @@ impl MemoryEventCoordinator {
         loop {
             let pending = self.pending_tasks.load(Ordering::SeqCst);
 
-            // 如果没有待处理任务，返回成功
             if pending == 0 {
-                // 额外等待一小段时间，确保没有新任务刚刚提交
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 let pending_after = self.pending_tasks.load(Ordering::SeqCst);
                 if pending_after == 0 {
-                    log::info!("✅ 所有后台任务已完成");
+                    info!("All background tasks completed");
                     return true;
                 }
-                // 有新任务提交，继续等待
                 continue;
             }
 
-            // 检查是否超时
             if start.elapsed() >= timeout {
-                log::warn!("⚠️ 等待后台任务超时，仍有 {} 个任务未完成", pending);
+                warn!("Timeout, {} tasks still pending", pending);
                 return false;
             }
 
-            // 首次打印等待日志
             if start.elapsed() < Duration::from_millis(600) {
-                log::info!("⏳ 等待 {} 个后台任务完成...", pending);
+                info!("Waiting for {} tasks...", pending);
             }
 
-            // 等待一小段时间再检查
             tokio::time::sleep(check_interval).await;
         }
     }
@@ -590,17 +557,30 @@ impl MemoryEventCoordinator {
             memory_id, memory_type, scope, owner_id
         );
 
-        // Trigger layer cascade update
-        self.layer_updater
-            .on_memory_changed(
-                scope.clone(),
-                owner_id.to_string(),
-                file_uri.to_string(),
-                ChangeType::Add,
-            )
-            .await?;
+        // Skip layer cascade if suppressed for this scope (e.g. during on_session_closed's
+        // update_all_layers), but always continue with vector sync so the new file is indexed.
+        let key = format!("{}/{}", scope, owner_id);
+        let suppress_cascade = self
+            .suppress_layer_cascade_scopes
+            .read()
+            .await
+            .contains(&key);
 
-        // Trigger vector sync
+        if !suppress_cascade {
+            // Trigger layer cascade update
+            self.layer_updater
+                .on_memory_changed(
+                    scope.clone(),
+                    owner_id.to_string(),
+                    file_uri.to_string(),
+                    ChangeType::Add,
+                )
+                .await?;
+        } else {
+            debug!("Layer cascade suppressed for MemoryCreated: {}", key);
+        }
+
+        // Always trigger vector sync (suppression only skips layer cascade, not vector indexing)
         self.vector_sync
             .sync_file_change(file_uri, ChangeType::Add)
             .await?;
@@ -626,17 +606,29 @@ impl MemoryEventCoordinator {
             memory_id, memory_type, scope, owner_id
         );
 
-        // Trigger layer cascade update
-        self.layer_updater
-            .on_memory_changed(
-                scope.clone(),
-                owner_id.to_string(),
-                file_uri.to_string(),
-                ChangeType::Update,
-            )
-            .await?;
+        // Skip layer cascade if suppressed for this scope, but always continue vector sync.
+        let key = format!("{}/{}", scope, owner_id);
+        let suppress_cascade = self
+            .suppress_layer_cascade_scopes
+            .read()
+            .await
+            .contains(&key);
 
-        // Trigger vector sync
+        if !suppress_cascade {
+            // Trigger layer cascade update
+            self.layer_updater
+                .on_memory_changed(
+                    scope.clone(),
+                    owner_id.to_string(),
+                    file_uri.to_string(),
+                    ChangeType::Update,
+                )
+                .await?;
+        } else {
+            debug!("Layer cascade suppressed for MemoryUpdated: {}", key);
+        }
+
+        // Always trigger vector sync
         self.vector_sync
             .sync_file_change(file_uri, ChangeType::Update)
             .await?;
@@ -717,6 +709,19 @@ impl MemoryEventCoordinator {
         Ok(())
     }
 
+    /// 同步处理 session 关闭：记忆提取 → user/agent 文件写入 → L0/L1 生成 → 向量同步
+    ///
+    /// 调用方 `.await` 后可保证所有副作用已完成，不存在异步竞争。
+    /// 供 `MemoryOperations::close_session_sync` 直接调用，无需经过 channel。
+    pub async fn process_session_closed(
+        &self,
+        session_id: &str,
+        user_id: &str,
+        agent_id: &str,
+    ) -> Result<()> {
+        self.on_session_closed(session_id, user_id, agent_id).await
+    }
+
     /// Handle session closed event (the main trigger for memory extraction)
     async fn on_session_closed(
         &self,
@@ -724,53 +729,81 @@ impl MemoryEventCoordinator {
         user_id: &str,
         agent_id: &str,
     ) -> Result<()> {
-        // 使用 log 以便在 tars 中可见
-        log::info!(
-            "🔄 Processing session closed: {} (user_id={}, agent_id={})",
-            session_id,
-            user_id,
-            agent_id
-        );
-        info!("Processing session closed: {}", session_id);
+        info!("Processing session closed: {} (user={}, agent={})", session_id, user_id, agent_id);
 
         // 1. Extract memories from the session
         let extracted = self.extract_memories_from_session(session_id).await?;
 
-        log::info!(
-            "🧠 Extracted memories: preferences={}, entities={}, events={}, cases={}, personal_info={}, work_history={}, relationships={}, goals={}",
+        info!(
+            "Extracted memories: {} preferences, {} entities, {} events, {} cases",
             extracted.preferences.len(),
             extracted.entities.len(),
             extracted.events.len(),
-            extracted.cases.len(),
-            extracted.personal_info.len(),
-            extracted.work_history.len(),
-            extracted.relationships.len(),
-            extracted.goals.len()
+            extracted.cases.len()
         );
 
         // 2. Update user memories
         if !extracted.is_empty() {
+            // 2a. 抑制后台 event loop 对 user/agent scope 的级联更新：
+            //     update_memories 写文件时会发出 MemoryCreated/MemoryUpdated 事件，
+            //     后台 loop 处理这些事件会触发 on_memory_changed → update_directory_layers
+            //     → update_root_layers，与下方步骤 2b 的 update_all_layers 完全重复。
+            //     只抑制当前 user/agent scope，不影响并发中其他 scope 的正常处理。
+            //     注意：向量同步不受抑制影响，仍会正常执行。
+            let user_key = format!("{}/{}", crate::memory_index::MemoryScope::User, user_id);
+            let agent_key = format!("{}/{}", crate::memory_index::MemoryScope::Agent, agent_id);
+            {
+                let mut set = self.suppress_layer_cascade_scopes.write().await;
+                set.insert(user_key.clone());
+                set.insert(agent_key.clone());
+            }
+
             let user_result = self
                 .memory_updater
                 .update_memories(user_id, agent_id, session_id, &extracted)
                 .await?;
 
-            log::info!(
-                "✅ User memory update for session {}: {} created, {} updated",
-                session_id,
-                user_result.created,
-                user_result.updated
-            );
             info!(
-                "User memory update for session {}: {} created, {} updated",
+                "User memory updated for session {}: {} created, {} updated",
                 session_id, user_result.created, user_result.updated
             );
 
-            // 注意：不在这里调用 update_all_layers，因为它是长时间运行的操作
-            // 会阻塞事件处理循环。改为在退出流程中显式调用 generate_user_agent_layers
-            log::info!("📝 记忆已写入，退出时应调用 generate_user_agent_layers 生成层级文件");
+            // 2b. Synchronously generate L0/L1 for user and agent directories.
+            //
+            // `update_memories` writes files and emits MemoryCreated/MemoryUpdated events via
+            // `event_tx`, but those events are handled by the background loop *asynchronously*.
+            // Since `on_session_closed` is called synchronously (without waiting for the loop),
+            // the background handler hasn't run yet — so L0/L1 files would not be generated
+            // until the next background iteration, which may happen after the process exits.
+            //
+            // Fix: call `layer_updater.update_all_layers` directly here so that L0/L1 is
+            // generated before we return.
+            info!("Generating L0/L1 for user/{} after memory extraction...", user_id);
+            if let Err(e) = self.layer_updater
+                .update_all_layers(&crate::memory_index::MemoryScope::User, user_id)
+                .await
+            {
+                warn!("Failed to update user L0/L1 layers: {}", e);
+            }
+
+            if !extracted.cases.is_empty() {
+                info!("Generating L0/L1 for agent/{} after case memory extraction...", agent_id);
+                if let Err(e) = self.layer_updater
+                    .update_all_layers(&crate::memory_index::MemoryScope::Agent, agent_id)
+                    .await
+                {
+                    warn!("Failed to update agent L0/L1 layers: {}", e);
+                }
+            }
+
+            // 2c. 恢复后台级联更新（移除 scope 抑制）
+            {
+                let mut set = self.suppress_layer_cascade_scopes.write().await;
+                set.remove(&user_key);
+                set.remove(&agent_key);
+            }
         } else {
-            log::info!("⚠️ No memories extracted from session {}", session_id);
+            info!("No memories extracted from session {}", session_id);
         }
 
         // 3. Update timeline layers
@@ -782,7 +815,6 @@ impl MemoryEventCoordinator {
         let timeline_uri = format!("cortex://session/{}/timeline", session_id);
         self.vector_sync.sync_directory(&timeline_uri).await?;
 
-        log::info!("✅ Session {} processing complete", session_id);
         info!("Session {} processing complete", session_id);
 
         Ok(())
@@ -847,10 +879,7 @@ impl MemoryEventCoordinator {
 
     /// Extract memories from a session using LLM
     async fn extract_memories_from_session(&self, session_id: &str) -> Result<ExtractedMemories> {
-        // Collect all messages from the session
         let timeline_uri = format!("cortex://session/{}/timeline", session_id);
-
-        log::info!("📂 Collecting messages from: {}", timeline_uri);
 
         let mut messages = Vec::new();
         match self
@@ -858,54 +887,34 @@ impl MemoryEventCoordinator {
             .await
         {
             Ok(_) => {
-                log::info!("✅ Collected {} messages from session", messages.len());
+                debug!("Collected {} messages from session", messages.len());
             }
             Err(e) => {
-                log::error!("❌ Failed to collect messages: {}", e);
+                error!("Failed to collect messages: {}", e);
                 return Err(e);
             }
         }
 
         if messages.is_empty() {
-            log::warn!("⚠️ No messages found in session {}", session_id);
-            debug!("No messages found in session {}", session_id);
+            warn!("No messages found in session {}", session_id);
             return Ok(ExtractedMemories::default());
         }
 
-        // Build extraction prompt
-        log::info!(
-            "🧠 Building extraction prompt for {} messages...",
-            messages.len()
-        );
         let prompt = self.build_extraction_prompt(&messages);
 
-        // Call LLM for extraction
-        log::info!("📞 Calling LLM for memory extraction...");
+        debug!("Calling LLM for memory extraction...");
         let response = match self.llm_client.complete(&prompt).await {
             Ok(resp) => {
-                log::info!("✅ LLM response received ({} chars)", resp.len());
+                debug!("LLM response received ({} chars)", resp.len());
                 resp
             }
             Err(e) => {
-                log::error!("❌ LLM call failed: {}", e);
+                error!("LLM call failed: {}", e);
                 return Err(e);
             }
         };
 
-        // Parse response
         let extracted = self.parse_extraction_response(&response);
-
-        log::info!(
-            "🧠 Extracted memories: preferences={}, entities={}, events={}, cases={}, personal_info={}, work_history={}, relationships={}, goals={}",
-            extracted.preferences.len(),
-            extracted.entities.len(),
-            extracted.events.len(),
-            extracted.cases.len(),
-            extracted.personal_info.len(),
-            extracted.work_history.len(),
-            extracted.relationships.len(),
-            extracted.goals.len()
-        );
 
         info!(
             "Extracted {} memories from session {}",
@@ -953,6 +962,31 @@ impl MemoryEventCoordinator {
 
         format!(
             r#"Analyze the following conversation and extract memories in JSON format.
+
+## CRITICAL LANGUAGE RULES
+
+1. **Language Consistency** (MANDATORY):
+   - Extract memories in the SAME language as the conversation
+   - If conversation is in Chinese (中文) → memories MUST be in Chinese
+   - If conversation is in English → memories in English
+   - If mixed language → use the dominant language (>60% of content)
+   - **DO NOT translate** the conversation content into another language
+
+2. **Preserve Technical Terms** (MANDATORY):
+   - Keep technical terminology unchanged in their original language
+   - Programming languages: Rust, Python, TypeScript, JavaScript, Go
+   - Frameworks: Cortex Memory, Rig, React, Vue
+   - Personality types: INTJ, ENTJ, MBTI, DISC
+   - Proper nouns: names, companies, projects
+   - Acronyms: LLM, AI, ML, API, HTTP, REST
+
+3. **Examples**:
+   ✅ CORRECT (Chinese conversation):
+   - "Cortex Memory 是基于 Rust 的长期记忆系统"
+   - "用户喜欢吃牛肉汉堡，搭配酸黄瓜、芝士和可乐"
+
+   ❌ WRONG (Chinese conversation, should NOT translate to English):
+   - "User likes beef burgers with pickles, cheese, and coke"
 
 ## Instructions
 

@@ -61,7 +61,6 @@ pub mod types;
 pub mod automation;
 pub mod builder;
 pub mod embedding;
-pub mod extraction;
 pub mod filesystem;
 pub mod layers;
 pub mod llm;
@@ -69,7 +68,7 @@ pub mod search;
 pub mod session;
 pub mod vector_store;
 
-// New modules for v2.5 incremental update system
+// New modules for incremental update system
 pub mod memory_index;
 pub mod memory_events;
 pub mod memory_index_manager;
@@ -79,6 +78,7 @@ pub mod cascade_layer_debouncer;  // Phase 2 optimization
 pub mod llm_result_cache;          // Phase 3 optimization (LLM cache only)
 pub mod vector_sync_manager;
 pub mod memory_event_coordinator;
+pub mod memory_cleanup;  // Phase v2.6: forgetting mechanism
 
 // Re-exports
 pub use config::*;
@@ -88,24 +88,22 @@ pub use events::{CortexEvent, EventBus, FilesystemEvent, SessionEvent};
 pub use types::*;
 
 pub use automation::{
-    AutoExtractConfig, AutoExtractor, AutoIndexer, AutomationConfig, AutomationManager, FsWatcher,
-    IndexStats, IndexerConfig, SyncConfig, SyncManager, SyncStats, WatcherConfig,
+    AutoIndexer, AutomationConfig, AutomationManager,
+    IndexStats, IndexerConfig, SyncConfig, SyncManager, SyncStats,
 };
 pub use builder::{CortexMem, CortexMemBuilder};
-pub use extraction::ExtractionConfig;
-// Note: MemoryExtractor is also exported from session module
+// Note: MemoryExtractor is exported from session module
 pub use embedding::{EmbeddingClient, EmbeddingConfig};
 pub use filesystem::{CortexFilesystem, FilesystemOperations};
 pub use llm::LLMClient;
-pub use search::{SearchOptions, VectorSearchEngine};
+pub use search::{SearchOptions, VectorSearchEngine, SearchResult, QueryIntentType, EnhancedQueryIntent};
 pub use session::{
     CaseMemory, EntityMemory, EventMemory, ExtractedMemories, MemoryExtractor, Message,
     MessageRole, Participant, ParticipantManager, PreferenceMemory, SessionConfig, SessionManager,
 };
 pub use vector_store::{QdrantVectorStore, VectorStore, parse_vector_id, uri_to_vector_id};
 
-// New re-exports for v2.5
-// MemoryType from memory_index is the primary type for v2.5
+// MemoryType from memory_index is the primary type for
 pub use memory_index::{
     MemoryIndex, MemoryMetadata, MemoryScope, MemoryType, MemoryUpdateResult,
     SessionExtractionSummary,
@@ -114,12 +112,13 @@ pub use memory_events::{
     ChangeType, DeleteReason, EventStats, MemoryEvent,
 };
 pub use memory_index_manager::MemoryIndexManager;
-pub use incremental_memory_updater::IncrementalMemoryUpdater;
+pub use incremental_memory_updater::{IncrementalMemoryUpdater, MemoryItem};
 pub use cascade_layer_updater::{CascadeLayerUpdater, UpdateStats};
 pub use cascade_layer_debouncer::{LayerUpdateDebouncer, DebouncerConfig};  // Phase 2
 pub use llm_result_cache::{LlmResultCache, CacheConfig, CacheStats};      // Phase 3
 pub use vector_sync_manager::{VectorSyncManager, VectorSyncStats};
 pub use memory_event_coordinator::{MemoryEventCoordinator, CoordinatorConfig};  // Phase 2
+pub use memory_cleanup::{MemoryCleanupService, MemoryCleanupConfig, CleanupStats};  // v2.6
 
 // Session-related re-exports
 pub use session::message::MessageStorage;

@@ -10,63 +10,39 @@ use crate::{
     state::AppState,
 };
 
-/// Trigger memory extraction for a session
+/// Trigger memory extraction for a session.
+///
+/// This endpoint is now a convenience wrapper over the standard session-close pipeline.
+/// It marks the session as closed, runs memory extraction + L0/L1 generation synchronously
+/// via `MemoryEventCoordinator`, and returns a summary of the extracted data.
+///
+/// Note: the `cortex-mem-service` REST layer does not hold a `MemoryEventCoordinator`
+/// reference directly (it uses `CortexMem` which wires up the coordinator internally).
+/// For now, this endpoint delegates to `SessionManager::close_session` which sends a
+/// `SessionClosed` event that the coordinator handles asynchronously.
 pub async fn trigger_extraction(
     State(state): State<Arc<AppState>>,
     Path(thread_id): Path<String>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>> {
-    use cortex_mem_core::extraction::{ExtractionConfig, MemoryExtractor};
-
-    // Check if LLM client is available
-    let llm_client = state.llm_client.as_ref()
-        .ok_or_else(|| AppError::BadRequest(
-            "LLM client not configured. Set LLM_API_BASE_URL, LLM_API_KEY, and LLM_MODEL environment variables.".to_string()
-        ))?;
-
-    // Create extraction config
-    let config = ExtractionConfig {
-        extract_facts: true,
-        extract_decisions: true,
-        extract_entities: true,
-        min_confidence: 0.5,
-        max_messages_per_batch: 50,
-    };
-
-    // Create extractor
-    let extractor = MemoryExtractor::new(state.filesystem.clone(), llm_client.clone(), config);
-
-    // Get message storage
-    let message_storage = cortex_mem_core::MessageStorage::new(state.filesystem.clone());
-
-    // List all message URIs for the thread
-    let message_uris = message_storage.list_messages(&thread_id).await?;
-
-    // Load messages
-    let mut messages = Vec::new();
-    for uri in message_uris {
-        if let Ok(msg) = message_storage.load_message(&uri).await {
-            messages.push(msg);
-        }
+    // Ensure LLM is available (coordinator needs it)
+    if state.llm_client.is_none() {
+        return Err(AppError::BadRequest(
+            "LLM client not configured. Set LLM_API_BASE_URL, LLM_API_KEY, and LLM_MODEL \
+             environment variables."
+                .to_string(),
+        ));
     }
 
-    if messages.is_empty() {
-        return Err(AppError::NotFound(format!(
-            "No messages found in thread {}",
-            thread_id
-        )));
-    }
-
-    // Extract memories
-    let extraction_result = extractor
-        .extract_from_messages(&thread_id, &messages)
-        .await?;
+    // Close the session — this sends a SessionClosed event to MemoryEventCoordinator which
+    // handles memory extraction, L0/L1 generation and vector sync asynchronously.
+    let mut session_mgr = state.session_manager.write().await;
+    session_mgr.close_session(&thread_id).await?;
 
     let response = serde_json::json!({
         "thread_id": thread_id,
-        "message_count": messages.len(),
-        "facts": extraction_result.facts,
-        "decisions": extraction_result.decisions,
-        "entities": extraction_result.entities,
+        "status": "extraction_triggered",
+        "message": "Session closed. Memory extraction and L0/L1 generation are being processed \
+                    asynchronously by MemoryEventCoordinator.",
     });
 
     Ok(Json(ApiResponse::success(response)))

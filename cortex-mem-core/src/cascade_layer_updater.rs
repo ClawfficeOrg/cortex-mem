@@ -19,7 +19,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Update statistics for monitoring optimization effectiveness
 #[derive(Debug, Clone, Default)]
@@ -128,28 +128,46 @@ impl CascadeLayerUpdater {
         content.hash(&mut hasher);
         format!("{:x}", hasher.finish())
     }
+
+    /// Strip metadata lines added by this module so they don't pollute
+    /// content aggregation used for hash comparison and parent-level summaries.
+    ///
+    /// Stripped lines:
+    /// - `<!-- source-hash: ... -->` — source hash footer
+    /// - `**Added**: ...`            — timestamp footer
+    fn strip_metadata_lines(content: &str) -> String {
+        content
+            .lines()
+            .filter(|line| {
+                !line.starts_with("<!-- source-hash:") && !line.starts_with("**Added**:")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
     
     /// Check if layer should be updated based on content hash
     /// 
     /// Returns true if:
     /// - Layer file doesn't exist
-    /// - Content hash has changed
+    /// - Source content hash (stored in the file footer) has changed
+    ///
+    /// The hash stored in the layer file footer uses the format:
+    ///   `<!-- source-hash: {hex} -->`
+    /// This records the hash of the *source* content that was fed to the LLM,
+    /// not the hash of the generated summary text itself.
     async fn should_update_layer(&self, layer_uri: &str, new_content_hash: &str) -> Result<bool> {
-        // Try to read existing layer file
         match self.filesystem.read(layer_uri).await {
             Ok(existing_content) => {
-                // Calculate hash of existing content (excluding timestamp)
-                // Remove timestamp line for comparison
-                let content_without_ts = existing_content
-                    .lines()
-                    .filter(|line| !line.starts_with("**Added**:"))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                
-                let old_hash = self.calculate_content_hash(&content_without_ts);
-                
-                // Only update if content changed
-                Ok(old_hash != new_content_hash)
+                // Look for stored source-hash comment in the file
+                for line in existing_content.lines() {
+                    if let Some(rest) = line.strip_prefix("<!-- source-hash: ") {
+                        if let Some(stored_hash) = rest.strip_suffix(" -->") {
+                            return Ok(stored_hash != new_content_hash);
+                        }
+                    }
+                }
+                // No hash found in old file (legacy format) → regenerate
+                Ok(true)
             }
             Err(_) => {
                 // File doesn't exist, need to create
@@ -244,7 +262,7 @@ impl CascadeLayerUpdater {
                     debug!("💔 Cache MISS, generating with LLM");
                     
                     let l0 = self.l0_generator
-                        .generate_with_llm(&content, &self.llm_client)
+                        .generate_with_llm(&content, &self.llm_client, &[])
                         .await?;
                     
                     let l1 = self.l1_generator
@@ -265,7 +283,7 @@ impl CascadeLayerUpdater {
         } else {
             // No cache, generate directly
             let l0 = self.l0_generator
-                .generate_with_llm(&content, &self.llm_client)
+                .generate_with_llm(&content, &self.llm_client, &[])
                 .await?;
             
             let l1 = self.l1_generator
@@ -284,10 +302,10 @@ impl CascadeLayerUpdater {
             stats.updated_count += 1;
         }
         
-        // Add timestamp
+        // Add timestamp + source hash footer (used by should_update_layer)
         let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
-        let abstract_with_ts = format!("{}\n\n**Added**: {}", abstract_text, timestamp);
-        let overview_with_ts = format!("{}\n\n---\n\n**Added**: {}", overview, timestamp);
+        let abstract_with_ts = format!("{}\n\n**Added**: {}\n<!-- source-hash: {} -->", abstract_text, timestamp, new_content_hash);
+        let overview_with_ts = format!("{}\n\n---\n\n**Added**: {}\n<!-- source-hash: {} -->", overview, timestamp, new_content_hash);
         
         // Write layer files
         let overview_uri = format!("{}/.overview.md", dir_uri);
@@ -403,7 +421,7 @@ impl CascadeLayerUpdater {
                     debug!("💔 Cache MISS for root, generating with LLM");
                     
                     let l0 = self.l0_generator
-                        .generate_with_llm(&aggregated, &self.llm_client)
+                        .generate_with_llm(&aggregated, &self.llm_client, &[])
                         .await?;
                     
                     let l1 = self.l1_generator
@@ -422,7 +440,7 @@ impl CascadeLayerUpdater {
             }
         } else {
             let l0 = self.l0_generator
-                .generate_with_llm(&aggregated, &self.llm_client)
+                .generate_with_llm(&aggregated, &self.llm_client, &[])
                 .await?;
             
             let l1 = self.l1_generator
@@ -441,10 +459,10 @@ impl CascadeLayerUpdater {
             stats.updated_count += 1;
         }
         
-        // Add timestamp
+        // Add timestamp + source hash footer (used by should_update_layer)
         let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
-        let abstract_with_ts = format!("{}\n\n**Added**: {}", abstract_text, timestamp);
-        let overview_with_ts = format!("{}\n\n---\n\n**Added**: {}", overview, timestamp);
+        let abstract_with_ts = format!("{}\n\n**Added**: {}\n<!-- source-hash: {} -->", abstract_text, timestamp, new_content_hash);
+        let overview_with_ts = format!("{}\n\n---\n\n**Added**: {}\n<!-- source-hash: {} -->", overview, timestamp, new_content_hash);
         
         // Write layer files
         let overview_uri = format!("{}/.overview.md", root_uri);
@@ -486,7 +504,9 @@ impl CascadeLayerUpdater {
                 match self.filesystem.read(&entry.uri).await {
                     Ok(file_content) => {
                         content.push_str(&format!("\n\n=== {} ===\n\n", entry.name));
-                        content.push_str(&file_content);
+                        // Strip source-hash footer so it doesn't pollute parent-level aggregation
+                        let stripped = Self::strip_metadata_lines(&file_content);
+                        content.push_str(&stripped);
                         file_count += 1;
                     }
                     Err(e) => {
@@ -527,7 +547,9 @@ impl CascadeLayerUpdater {
             let abstract_uri = format!("{}/.abstract.md", entry.uri);
             if let Ok(abstract_content) = self.filesystem.read(&abstract_uri).await {
                 content.push_str(&format!("\n\n## {}\n\n", entry.name));
-                content.push_str(&abstract_content);
+                // Strip source-hash footer so it doesn't pollute parent-level aggregation
+                let stripped = Self::strip_metadata_lines(&abstract_content);
+                content.push_str(&stripped);
                 dir_count += 1;
             }
         }
@@ -584,9 +606,19 @@ impl CascadeLayerUpdater {
             return Ok(());
         }
         
+        // 🔧 Hash check: skip if content hasn't changed since last generation
+        let abstract_uri = format!("{}/.abstract.md", timeline_uri);
+        let content_hash = self.calculate_content_hash(&content);
+        if !self.should_update_layer(&abstract_uri, &content_hash).await? {
+            debug!("⏭️  Skipped timeline L0/L1 for session {} (content unchanged)", session_id);
+            // Still update date-level layers (they have their own hash checks)
+            self.update_timeline_date_layers(&timeline_uri).await?;
+            return Ok(());
+        }
+        
         // Generate L0 abstract
         let abstract_text = self.l0_generator
-            .generate_with_llm(&content, &self.llm_client)
+            .generate_with_llm(&content, &self.llm_client, &[])
             .await?;
         
         // Generate L1 overview
@@ -594,13 +626,12 @@ impl CascadeLayerUpdater {
             .generate_with_llm(&content, &self.llm_client)
             .await?;
         
-        // Add timestamp
+        // Add timestamp + source hash footer (used by should_update_layer for change detection)
         let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
-        let abstract_with_ts = format!("{}\n\n**Added**: {}", abstract_text, timestamp);
-        let overview_with_ts = format!("{}\n\n---\n\n**Added**: {}", overview, timestamp);
+        let abstract_with_ts = format!("{}\n\n**Added**: {}\n<!-- source-hash: {} -->", abstract_text, timestamp, content_hash);
+        let overview_with_ts = format!("{}\n\n---\n\n**Added**: {}\n<!-- source-hash: {} -->", overview, timestamp, content_hash);
         
         // Write layer files
-        let abstract_uri = format!("{}/.abstract.md", timeline_uri);
         let overview_uri = format!("{}/.overview.md", timeline_uri);
         
         self.filesystem.write(&abstract_uri, &abstract_with_ts).await?;
@@ -697,17 +728,22 @@ impl CascadeLayerUpdater {
                     let month_content = self.aggregate_directory_content_recursive(&entry.uri).await?;
                     
                     if !month_content.is_empty() {
-                        let abstract_text = self.l0_generator
-                            .generate_with_llm(&month_content, &self.llm_client)
-                            .await?;
-                        
-                        let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
-                        let abstract_with_ts = format!("{}\n\n**Added**: {}", abstract_text, timestamp);
-                        
                         let abstract_uri = format!("{}/.abstract.md", entry.uri);
-                        self.filesystem.write(&abstract_uri, &abstract_with_ts).await?;
-                        
-                        debug!("Updated month-level L0 for {}", entry.uri);
+                        let content_hash = self.calculate_content_hash(&month_content);
+                        // Skip if content hasn't changed
+                        if self.should_update_layer(&abstract_uri, &content_hash).await? {
+                            let abstract_text = self.l0_generator
+                                .generate_with_llm(&month_content, &self.llm_client, &[])
+                                .await?;
+                            
+                            let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
+                            let abstract_with_ts = format!("{}\n\n**Added**: {}\n<!-- source-hash: {} -->", abstract_text, timestamp, content_hash);
+                            
+                            self.filesystem.write(&abstract_uri, &abstract_with_ts).await?;
+                            debug!("Updated month-level L0 for {}", entry.uri);
+                        } else {
+                            debug!("Skipped month-level L0 for {} (content unchanged)", entry.uri);
+                        }
                     }
                     
                     // Process day directories within
@@ -729,17 +765,22 @@ impl CascadeLayerUpdater {
                 let day_content = self.aggregate_directory_content(&entry.uri).await?;
                 
                 if !day_content.is_empty() {
-                    let abstract_text = self.l0_generator
-                        .generate_with_llm(&day_content, &self.llm_client)
-                        .await?;
-                    
-                    let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
-                    let abstract_with_ts = format!("{}\n\n**Added**: {}", abstract_text, timestamp);
-                    
                     let abstract_uri = format!("{}/.abstract.md", entry.uri);
-                    self.filesystem.write(&abstract_uri, &abstract_with_ts).await?;
-                    
-                    debug!("Updated day-level L0 for {}", entry.uri);
+                    let content_hash = self.calculate_content_hash(&day_content);
+                    // Skip if content hasn't changed
+                    if self.should_update_layer(&abstract_uri, &content_hash).await? {
+                        let abstract_text = self.l0_generator
+                            .generate_with_llm(&day_content, &self.llm_client, &[])
+                            .await?;
+                        
+                        let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
+                        let abstract_with_ts = format!("{}\n\n**Added**: {}\n<!-- source-hash: {} -->", abstract_text, timestamp, content_hash);
+                        
+                        self.filesystem.write(&abstract_uri, &abstract_with_ts).await?;
+                        debug!("Updated day-level L0 for {}", entry.uri);
+                    } else {
+                        debug!("Skipped day-level L0 for {} (content unchanged)", entry.uri);
+                    }
                 }
             }
         }
@@ -790,23 +831,22 @@ impl CascadeLayerUpdater {
     pub async fn update_all_layers(&self, scope: &MemoryScope, owner_id: &str) -> Result<()> {
         let root_uri = self.get_scope_root(scope, owner_id);
         
-        log::info!("🔄 update_all_layers: 检查根目录 {}", root_uri);
+        debug!("Checking root directory: {}", root_uri);
         
         if !self.filesystem.exists(&root_uri).await? {
-            log::info!("📂 根目录 {} 不存在，跳过", root_uri);
+            debug!("Root directory {} does not exist, skipping", root_uri);
             return Ok(());
         }
         
-        log::info!("📂 根目录存在，开始递归更新层级文件...");
+        debug!("Starting recursive layer update...");
         
         // Walk through all directories and update layers
         self.update_all_layers_recursive(&root_uri, scope, owner_id).await?;
         
         // Update root layers last
-        log::info!("🔄 开始更新根目录层级文件...");
         self.update_root_layers(scope, owner_id).await?;
         
-        log::info!("✅ update_all_layers 完成: {:?}", scope);
+        info!("Layer update completed for {:?}", scope);
         Ok(())
     }
 
@@ -820,12 +860,11 @@ impl CascadeLayerUpdater {
         Box::pin(async move {
             let entries = self.filesystem.list(dir_uri).await?;
             
-            log::info!("📂 update_all_layers_recursive: {} 有 {} 个条目", dir_uri, entries.len());
+            debug!("Directory {} has {} entries", dir_uri, entries.len());
             
             // First, process all subdirectories
             for entry in &entries {
                 if entry.is_directory && !entry.name.starts_with('.') {
-                    log::info!("📂   进入子目录: {}", entry.name);
                     self.update_all_layers_recursive(&entry.uri, scope, owner_id).await?;
                 }
             }
@@ -835,13 +874,10 @@ impl CascadeLayerUpdater {
                 !e.is_directory && !e.name.starts_with('.') && e.name.ends_with(".md")
             });
             
-            log::info!("📂 目录 {} 是否有内容文件: {}", dir_uri, has_content);
-            
             if has_content {
-                log::info!("🔄 开始为目录 {} 生成层级文件...", dir_uri);
                 match self.update_directory_layers(dir_uri, scope, owner_id).await {
-                    Ok(_) => log::info!("✅ 目录 {} 层级文件生成成功", dir_uri),
-                    Err(e) => log::warn!("⚠️ 目录 {} 层级文件生成失败: {}", dir_uri, e),
+                    Ok(_) => debug!("Layer files generated for {}", dir_uri),
+                    Err(e) => warn!("Layer generation failed for {}: {}", dir_uri, e),
                 }
             }
             

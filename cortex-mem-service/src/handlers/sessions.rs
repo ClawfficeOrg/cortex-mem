@@ -123,7 +123,7 @@ pub async fn add_message(
         )),
     };
 
-    // v2.5: Use SessionManager::add_message to trigger MemoryEventCoordinator events
+    // Use SessionManager::add_message to trigger MemoryEventCoordinator events
     // This ensures proper event chain for automatic indexing and layer generation
     let session_mgr = state.session_manager.read().await;
     let message = session_mgr.add_message(&thread_id, role, payload.content).await?;
@@ -148,6 +148,20 @@ pub async fn close_session(
 ) -> Result<Json<ApiResponse<SessionResponse>>> {
     let mut session_mgr = state.session_manager.write().await;
     let metadata = session_mgr.close_session(&thread_id).await?;
+
+    // Emit SessionClosed event to trigger full memory extraction pipeline.
+    // This mirrors what cortex-mem-tools does in close_session_sync.
+    if let Some(ref tx) = state.memory_event_tx {
+        // Load user_id / agent_id from metadata; fall back to "default" if not set.
+        let user_id = metadata.user_id.clone().unwrap_or_else(|| "default".to_string());
+        let agent_id = metadata.agent_id.clone().unwrap_or_else(|| "default".to_string());
+        let _ = tx.send(cortex_mem_core::memory_events::MemoryEvent::SessionClosed {
+            session_id: thread_id.clone(),
+            user_id,
+            agent_id,
+        });
+        tracing::info!("SessionClosed event emitted for thread {}", thread_id);
+    }
 
     let response = SessionResponse {
         thread_id: metadata.thread_id,

@@ -2,12 +2,12 @@ use crate::{errors::*, types::*};
 use cortex_mem_core::{
     CortexFilesystem,
     FilesystemOperations,
+    MemoryIndexManager,
     SessionConfig,
     SessionManager,
     automation::{
-        AbstractConfig, AutoExtractConfig, AutoExtractor, AutoIndexer, AutomationConfig,
-        AutomationManager, IndexerConfig, LayerGenerationConfig, LayerGenerator, OverviewConfig,
-        SyncConfig, SyncManager,
+        AbstractConfig, AutoIndexer, AutomationConfig, AutomationManager, IndexerConfig,
+        LayerGenerationConfig, LayerGenerator, OverviewConfig, SyncConfig, SyncManager,
     },
     embedding::{EmbeddingClient, EmbeddingConfig},
     events::EventBus,
@@ -31,7 +31,6 @@ pub struct MemoryOperations {
     pub(crate) session_manager: Arc<RwLock<SessionManager>>,
     pub(crate) layer_manager: Arc<LayerManager>,
     pub(crate) vector_engine: Arc<VectorSearchEngine>,
-    pub(crate) auto_extractor: Option<Arc<AutoExtractor>>,
     pub(crate) layer_generator: Option<Arc<LayerGenerator>>,
     pub(crate) auto_indexer: Option<Arc<AutoIndexer>>,
 
@@ -43,11 +42,11 @@ pub struct MemoryOperations {
     pub(crate) default_user_id: String,
     pub(crate) default_agent_id: String,
 
-    /// v2.5: 事件发送器，用于异步触发层级生成
+    /// 事件发送器，用于异步触发层级生成
     pub(crate) memory_event_tx:
         Option<tokio::sync::mpsc::UnboundedSender<cortex_mem_core::memory_events::MemoryEvent>>,
 
-    /// v2.5: 事件协调器引用，用于等待后台任务完成
+    /// 事件协调器引用，用于同步等待后台处理完成
     pub(crate) event_coordinator: Option<Arc<cortex_mem_core::MemoryEventCoordinator>>,
 }
 
@@ -65,11 +64,6 @@ impl MemoryOperations {
     /// Get the session manager
     pub fn session_manager(&self) -> &Arc<RwLock<SessionManager>> {
         &self.session_manager
-    }
-
-    /// Get the auto extractor (for manual extraction on exit)
-    pub fn auto_extractor(&self) -> Option<&Arc<AutoExtractor>> {
-        self.auto_extractor.as_ref()
     }
 
     /// Get the layer generator (for manual layer generation on exit)
@@ -121,7 +115,7 @@ impl MemoryOperations {
         filesystem.initialize().await?;
 
         // 创建EventBus用于自动化
-        let (event_bus, mut event_rx_main) = EventBus::new();
+        let (event_bus, event_rx_main) = EventBus::new();
 
         // Initialize Qdrant first (needed for MemoryEventCoordinator)
         tracing::info!("Initializing Qdrant vector store: {}", qdrant_url);
@@ -152,11 +146,12 @@ impl MemoryOperations {
             model_name: embedding_model_name.to_string(),
             batch_size: 10,
             timeout_secs: 30,
+            ..EmbeddingConfig::default()
         };
         let embedding_client = Arc::new(EmbeddingClient::new(embedding_config)?);
         tracing::info!("Embedding client initialized");
 
-        // v2.5: Create MemoryEventCoordinator BEFORE SessionManager
+        // Create MemoryEventCoordinator BEFORE SessionManager
         let (coordinator, memory_event_tx, event_rx) = cortex_mem_core::MemoryEventCoordinator::new(
             filesystem.clone(),
             llm_client.clone(),
@@ -169,10 +164,10 @@ impl MemoryOperations {
 
         // Start the coordinator event loop in background
         tokio::spawn(coordinator.start(event_rx));
-        tracing::info!("MemoryEventCoordinator started for v2.5 incremental updates");
+        tracing::info!("MemoryEventCoordinator started for incremental updates");
 
         let config = SessionConfig::default();
-        // Create SessionManager with memory_event_tx for v2.5 integration
+        // Create SessionManager with memory_event_tx for integration
         let session_manager = SessionManager::with_llm_and_events(
             filesystem.clone(),
             config,
@@ -185,31 +180,30 @@ impl MemoryOperations {
         // LLM-enabled LayerManager for high-quality L0/L1 generation
         let layer_manager = Arc::new(LayerManager::new(filesystem.clone(), llm_client.clone()));
 
-        // Create vector search engine with LLM support for query rewriting
-        let vector_engine = Arc::new(VectorSearchEngine::with_llm(
-            vector_store.clone(),
-            embedding_client.clone(),
-            filesystem.clone(),
-            llm_client.clone(),
-        ));
-        tracing::info!("Vector search engine created with LLM support for query rewriting");
+        // Create shared MemoryIndexManager (used by VectorSearchEngine for archived filtering
+        // and by MemoryCleanupService for forgetting curve evictions)
+        let index_manager = Arc::new(MemoryIndexManager::new(filesystem.clone()));
+
+        // Create vector search engine with LLM support for query rewriting.
+        // Wire up:
+        //   - memory_event_tx  → search hits emit MemoryAccessed events (forgetting mechanism)
+        //   - index_manager    → archived memories are filtered from search results
+        let vector_engine = Arc::new(
+            VectorSearchEngine::with_llm(
+                vector_store.clone(),
+                embedding_client.clone(),
+                filesystem.clone(),
+                llm_client.clone(),
+            )
+            .with_memory_event_tx(memory_event_tx.clone())
+            .with_index_manager(index_manager.clone()),
+        );
+        tracing::info!("Vector search engine created with LLM, event tracking, and archived filter");
 
         // 使用传入的user_id，如果没有则使用tenant_id
         let actual_user_id = user_id.unwrap_or_else(|| tenant_id.clone());
 
-        // 🔧 创建AutoExtractor(简化配置，移除了save_user_memories和save_agent_memories)
-        let auto_extract_config = AutoExtractConfig {
-            min_message_count: 5,
-            extract_on_close: false, // v2.5: 禁用旧机制，使用新的 MemoryEventCoordinator
-        };
-        let auto_extractor = Arc::new(AutoExtractor::with_user_id(
-            filesystem.clone(),
-            llm_client.clone(),
-            auto_extract_config,
-            &actual_user_id,
-        ));
-
-        // 创建AutoIndexer用于实时索引
+        // 创建 AutoIndexer 用于 L2 消息实时索引
         let indexer_config = IndexerConfig {
             auto_index: true,
             batch_size: 10,
@@ -222,19 +216,36 @@ impl MemoryOperations {
             indexer_config,
         ));
 
-        // 创建AutomationManager
+        // 创建 AutomationManager：仅负责 L2 消息实时索引
+        // L0/L1 生成、记忆提取、向量同步均由 MemoryEventCoordinator 处理
+        //
+        // 使用 `with_memory_events` 路径，将 L2 索引请求路由到 MemoryEventCoordinator
+        // 而不是直接调用 AutoIndexer，实现统一调度和可观测性。
         let automation_config = AutomationConfig {
             auto_index: true,
-            auto_extract: false,    // Extract由单独的监听器处理
-            index_on_message: true, // ✅ 消息时自动索引L2
-            index_on_close: true,   // ✅ Session关闭时生成L0/L1并索引
+            index_on_message: true, // 消息添加时实时索引 L2
             index_batch_delay: 1,
-            auto_generate_layers_on_startup: false, // 启动时不生成（避免阻塞）
-            generate_layers_every_n_messages: 5,    // 每5条消息生成一次L0/L1
-            max_concurrent_llm_tasks: 3,            // 最多3个并发LLM任务
+            max_concurrent_tasks: 3,
         };
+        let automation_manager = AutomationManager::with_memory_events(
+            auto_indexer.clone(),
+            automation_config,
+            memory_event_tx.clone(),
+        );
 
-        // 创建LayerGenerator（用于退出时手动生成）
+        // 启动 AutomationManager（直接消费 EventBus 事件，无需分裂转发）
+        let tenant_id_for_automation = tenant_id.clone();
+        tokio::spawn(async move {
+            tracing::info!(
+                "AutomationManager started for tenant {} (L2 message indexing)",
+                tenant_id_for_automation
+            );
+            if let Err(e) = automation_manager.start(event_rx_main).await {
+                tracing::error!("AutomationManager stopped with error: {}", e);
+            }
+        });
+
+        // 创建 LayerGenerator（供 ensure_all_layers / ensure_session_layers 手动调用）
         let layer_gen_config = LayerGenerationConfig {
             batch_size: 10,
             delay_ms: 1000,
@@ -254,75 +265,6 @@ impl MemoryOperations {
             llm_client.clone(),
             layer_gen_config,
         ));
-
-        let automation_manager = AutomationManager::new(
-            auto_indexer.clone(),
-            None, // extractor由单独的监听器处理
-            automation_config,
-        )
-        .with_layer_generator(layer_generator.clone()); // 设置LayerGenerator
-
-        // 创建事件转发器（将主EventBus的事件转发给两个监听器）
-        let (tx_automation, rx_automation) = tokio::sync::mpsc::unbounded_channel();
-        let (tx_extractor, rx_extractor) = tokio::sync::mpsc::unbounded_channel();
-
-        tokio::spawn(async move {
-            while let Some(event) = event_rx_main.recv().await {
-                // 转发给AutomationManager
-                let _ = tx_automation.send(event.clone());
-                // 转发给AutoExtractor监听器
-                let _ = tx_extractor.send(event);
-            }
-        });
-
-        // 启动AutomationManager监听事件并自动索引
-        let tenant_id_for_automation = tenant_id.clone();
-        tokio::spawn(async move {
-            tracing::info!(
-                "Starting AutomationManager for tenant {}",
-                tenant_id_for_automation
-            );
-            if let Err(e) = automation_manager.start(rx_automation).await {
-                tracing::error!("AutomationManager stopped with error: {}", e);
-            }
-        });
-
-        // 启动后台监听器处理SessionClosed事件
-        let extractor_clone = auto_extractor.clone();
-        let tenant_id_clone = tenant_id.clone();
-        tokio::spawn(async move {
-            tracing::info!(
-                "Starting AutoExtractor event listener for tenant {}",
-                tenant_id_clone
-            );
-            let mut rx = rx_extractor;
-            while let Some(event) = rx.recv().await {
-                if let cortex_mem_core::CortexEvent::Session(session_event) = event {
-                    match session_event {
-                        cortex_mem_core::SessionEvent::Closed { session_id } => {
-                            tracing::info!("Session closed event received: {}", session_id);
-                            match extractor_clone.extract_session(&session_id).await {
-                                Ok(stats) => {
-                                    tracing::info!(
-                                        "Extraction completed for session {}: {:?}",
-                                        session_id,
-                                        stats
-                                    );
-                                }
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Extraction failed for session {}: {}",
-                                        session_id,
-                                        e
-                                    );
-                                }
-                            }
-                        }
-                        _ => {} // 忽略其他事件
-                    }
-                }
-            }
-        });
 
         // Auto-sync existing content to vector database (in background)
         let sync_manager = SyncManager::new(
@@ -351,16 +293,76 @@ impl MemoryOperations {
             }
         });
 
+        // Build VectorSyncManager for MemoryCleanupService.
+        // The embedding client is required by the constructor but only used for Add/Update
+        // operations; Delete calls (the only ones cleanup makes) don't touch it.
+        let vector_sync_for_cleanup = Arc::new(
+            cortex_mem_core::vector_sync_manager::VectorSyncManager::new(
+                filesystem.clone(),
+                embedding_client.clone(),
+                vector_store.clone(),
+            ),
+        );
+
+        // Launch background MemoryCleanupService (Ebbinghaus forgetting curve eviction).
+        // Runs every 24 hours; removes archived memories whose strength has decayed below
+        // the delete threshold and syncs deletions to Qdrant.
+        {
+            use cortex_mem_core::{
+                memory_cleanup::{MemoryCleanupConfig, MemoryCleanupService},
+                memory_index::MemoryScope,
+            };
+
+            let cleanup_svc = MemoryCleanupService::new(
+                index_manager.clone(),
+                MemoryCleanupConfig::default(),
+                Some(vector_sync_for_cleanup),
+            );
+            let cleanup_user_id = actual_user_id.clone();
+
+            tokio::spawn(async move {
+                // Give the rest of the system time to finish initialising before
+                // the first cleanup sweep.
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                tracing::info!("MemoryCleanupService background task started");
+
+                let interval = std::time::Duration::from_secs(24 * 60 * 60);
+                loop {
+                    // Clean both User-scoped memories (preferences, entities, …)
+                    // and Agent-scoped memories (cases, …).
+                    match cleanup_svc
+                        .run_cleanup(&MemoryScope::User, &cleanup_user_id)
+                        .await
+                    {
+                        Ok(stats) => tracing::info!(
+                            "MemoryCleanup[User]: scanned={}, archived={}, deleted={}",
+                            stats.total_scanned, stats.archived, stats.deleted
+                        ),
+                        Err(e) => tracing::warn!("MemoryCleanup[User] failed: {}", e),
+                    }
+                    match cleanup_svc
+                        .run_cleanup(&MemoryScope::Agent, &cleanup_user_id)
+                        .await
+                    {
+                        Ok(stats) => tracing::info!(
+                            "MemoryCleanup[Agent]: scanned={}, archived={}, deleted={}",
+                            stats.total_scanned, stats.archived, stats.deleted
+                        ),
+                        Err(e) => tracing::warn!("MemoryCleanup[Agent] failed: {}", e),
+                    }
+                    tokio::time::sleep(interval).await;
+                }
+            });
+        }
+
         Ok(Self {
             filesystem,
             session_manager,
             layer_manager,
             vector_engine,
-            auto_extractor: Some(auto_extractor),
-            layer_generator: Some(layer_generator), // 保存LayerGenerator用于退出时生成
-            auto_indexer: Some(auto_indexer),       // 保存AutoIndexer用于退出时索引
+            layer_generator: Some(layer_generator),
+            auto_indexer: Some(auto_indexer),
 
-            // 保存组件引用以便退出时索引使用
             embedding_client,
             vector_store,
             llm_client,
@@ -368,10 +370,7 @@ impl MemoryOperations {
             default_user_id: actual_user_id,
             default_agent_id: tenant_id.clone(),
 
-            // v2.5: 保存事件发送器
             memory_event_tx: Some(memory_event_tx),
-
-            // v2.5: 保存事件协调器引用，用于等待后台任务完成
             event_coordinator: Some(coordinator_clone),
         })
     }
@@ -508,11 +507,62 @@ impl MemoryOperations {
         })
     }
 
-    /// Close session
+    /// Close session (fire-and-forget).
+    ///
+    /// Sends a `SessionClosed` event to `MemoryEventCoordinator` via channel.
+    /// Memory extraction and L0/L1 generation happen **asynchronously** in the
+    /// background; this method returns before they complete.
+    ///
+    /// Use `close_session_sync` in exit/shutdown flows where you need to wait.
     pub async fn close_session(&self, thread_id: &str) -> Result<()> {
         let mut sm = self.session_manager.write().await;
         sm.close_session(thread_id).await?;
         tracing::info!("Closed session: {}", thread_id);
+        Ok(())
+    }
+
+    /// Close session and synchronously wait for the full processing pipeline.
+    ///
+    /// Blocks until:
+    /// 1. Session metadata → marked closed (EventBus `SessionClosed` published)
+    /// 2. LLM memory extraction from session timeline
+    /// 3. user/agent memory files written
+    /// 4. L0/L1 layer files generated for all affected directories
+    /// 5. Session timeline synced to vector store
+    ///
+    /// Suitable for shutdown/exit flows. After this returns you can call
+    /// `index_all_files` knowing all L0/L1 files are already on disk.
+    pub async fn close_session_sync(&self, thread_id: &str) -> Result<()> {
+        // 1. Mark session as closed (metadata + legacy EventBus event)
+        let metadata = {
+            let mut sm = self.session_manager.write().await;
+            sm.close_session_metadata_only(thread_id).await?
+        };
+
+        let user_id = metadata.user_id.as_deref().unwrap_or("default");
+        let agent_id = metadata.agent_id.as_deref().unwrap_or("default");
+
+        tracing::info!(
+            "Session {} marked closed, starting synchronous processing (user={}, agent={})...",
+            thread_id, user_id, agent_id
+        );
+
+        // 2. Run the full processing pipeline synchronously via coordinator
+        if let Some(ref coordinator) = self.event_coordinator {
+            coordinator
+                .process_session_closed(thread_id, user_id, agent_id)
+                .await?;
+            tracing::info!(
+                "Session {} processing complete (memory extraction + L0/L1 generated)",
+                thread_id
+            );
+        } else {
+            tracing::warn!(
+                "MemoryEventCoordinator not initialized; session {} processing skipped",
+                thread_id
+            );
+        }
+
         Ok(())
     }
 
@@ -568,17 +618,17 @@ impl MemoryOperations {
         Ok(exists)
     }
 
-    /// 生成所有缺失的 L0/L1 层级文件（用于退出时调用）
+    /// Generate all missing L0/L1 layer files (for calling during exit)
     ///
-    /// 这个方法扫描所有目录，找出缺失 .abstract.md 或 .overview.md 的目录，
-    /// 并批量生成它们。适合在应用退出时调用。
+    /// This method scans all directories, finds those missing .abstract.md or .overview.md,
+    /// and generates them in batches. Suitable for calling during application exit.
     pub async fn ensure_all_layers(&self) -> Result<cortex_mem_core::automation::GenerationStats> {
         if let Some(ref generator) = self.layer_generator {
-            tracing::info!("🔍 开始扫描并生成缺失的 L0/L1 层级文件...");
+            tracing::info!("Starting scan and generation of missing L0/L1 layer files...");
             match generator.ensure_all_layers().await {
                 Ok(stats) => {
                     tracing::info!(
-                        "✅ L0/L1 层级生成完成: 总计 {}, 成功 {}, 失败 {}",
+                        "L0/L1 layer generation completed: total={}, generated={}, failed={}",
                         stats.total,
                         stats.generated,
                         stats.failed
@@ -586,34 +636,34 @@ impl MemoryOperations {
                     Ok(stats)
                 }
                 Err(e) => {
-                    tracing::error!("❌ L0/L1 层级生成失败: {}", e);
+                    tracing::error!("L0/L1 layer generation failed: {}", e);
                     Err(e.into())
                 }
             }
         } else {
-            tracing::warn!("⚠️ LayerGenerator 未配置，跳过层级生成");
+            tracing::warn!("LayerGenerator not configured, skipping layer generation");
             Ok(cortex_mem_core::automation::GenerationStats::default())
         }
     }
 
-    /// 为特定session生成 L0/L1 层级文件
+    /// Generate L0/L1 layer files for a specific session
     /// # Arguments
-    /// * `session_id` - 会话ID
+    /// * `session_id` - Session ID
     ///
     /// # Returns
-    /// 返回生成统计信息
+    /// Returns generation statistics
     pub async fn ensure_session_layers(
         &self,
         session_id: &str,
     ) -> Result<cortex_mem_core::automation::GenerationStats> {
         if let Some(ref generator) = self.layer_generator {
             let timeline_uri = format!("cortex://session/{}/timeline", session_id);
-            tracing::info!("🔍 为会话 {} 生成 L0/L1 层级文件", session_id);
+            tracing::info!("Generating L0/L1 layer files for session {}", session_id);
 
             match generator.ensure_timeline_layers(&timeline_uri).await {
                 Ok(stats) => {
                     tracing::info!(
-                        "✅ 会话 {} L0/L1 层级生成完成: 总计 {}, 成功 {}, 失败 {}",
+                        "Session {} L0/L1 layer generation completed: total={}, generated={}, failed={}",
                         session_id,
                         stats.total,
                         stats.generated,
@@ -622,37 +672,37 @@ impl MemoryOperations {
                     Ok(stats)
                 }
                 Err(e) => {
-                    tracing::error!("❌ 会话 {} L0/L1 层级生成失败: {}", session_id, e);
+                    tracing::error!("Session {} L0/L1 layer generation failed: {}", session_id, e);
                     Err(e.into())
                 }
             }
         } else {
-            tracing::warn!("⚠️ LayerGenerator 未配置，跳过层级生成");
+            tracing::warn!("LayerGenerator not configured, skipping layer generation");
             Ok(cortex_mem_core::automation::GenerationStats::default())
         }
     }
 
-    /// 索引所有文件到向量数据库（用于退出时调用）
-    /// 这个方法扫描所有文件，包括新生成的 .abstract.md 和 .overview.md，
-    /// 并将它们索引到向量数据库中。适合在应用退出时调用。
+    /// Index all files to vector database (for calling during exit)
+    /// This method scans all files, including newly generated .abstract.md and .overview.md,
+    /// and indexes them to the vector database. Suitable for calling during application exit.
     pub async fn index_all_files(&self) -> Result<cortex_mem_core::automation::SyncStats> {
-        tracing::info!("📊 开始索引所有文件到向量数据库...");
+        tracing::info!("Starting to index all files to vector database...");
 
         use cortex_mem_core::automation::{SyncConfig, SyncManager};
 
-        // 创建 SyncManager
+        // Create SyncManager
         let sync_manager = SyncManager::new(
             self.filesystem.clone(),
             self.embedding_client.clone(),
             self.vector_store.clone(),
-            self.llm_client.clone(), // 不需要 Option
+            self.llm_client.clone(), // Not optional
             SyncConfig::default(),
         );
 
         match sync_manager.sync_all().await {
             Ok(stats) => {
                 tracing::info!(
-                    "✅ 索引完成: 总计 {} 个文件, {} 个已索引, {} 个跳过, {} 个错误",
+                    "Indexing completed: {} total files, {} indexed, {} skipped, {} errors",
                     stats.total_files,
                     stats.indexed_files,
                     stats.skipped_files,
@@ -661,28 +711,28 @@ impl MemoryOperations {
                 Ok(stats)
             }
             Err(e) => {
-                tracing::error!("❌ 索引失败: {}", e);
+                tracing::error!("Indexing failed: {}", e);
                 Err(e.into())
             }
         }
     }
 
-    /// 为特定session索引文件到向量数据库
+    /// Index files to vector database for a specific session
     ///
     /// # Arguments
-    /// * `session_id` - 会话ID
+    /// * `session_id` - Session ID
     ///
     /// # Returns
-    /// 返回索引统计信息
+    /// Returns indexing statistics
     pub async fn index_session_files(
         &self,
         session_id: &str,
     ) -> Result<cortex_mem_core::automation::SyncStats> {
-        tracing::info!("📊 开始为会话 {} 索引文件到向量数据库...", session_id);
+        tracing::info!("Starting to index files to vector database for session {}...", session_id);
 
         use cortex_mem_core::automation::{SyncConfig, SyncManager};
 
-        // 创建 SyncManager
+        // Create SyncManager
         let sync_manager = SyncManager::new(
             self.filesystem.clone(),
             self.embedding_client.clone(),
@@ -691,13 +741,13 @@ impl MemoryOperations {
             SyncConfig::default(),
         );
 
-        // 限定扫描范围到特定session
+        // Limit scan scope to specific session
         let session_uri = format!("cortex://session/{}", session_id);
 
         match sync_manager.sync_specific_path(&session_uri).await {
             Ok(stats) => {
                 tracing::info!(
-                    "✅ 会话 {} 索引完成: 总计 {} 个文件, {} 个已索引, {} 个跳过, {} 个错误",
+                    "Session {} indexing completed: {} total files, {} indexed, {} skipped, {} errors",
                     session_id,
                     stats.total_files,
                     stats.indexed_files,
@@ -707,27 +757,16 @@ impl MemoryOperations {
                 Ok(stats)
             }
             Err(e) => {
-                tracing::error!("❌ 会话 {} 索引失败: {}", session_id, e);
+                tracing::error!("Session {} indexing failed: {}", session_id, e);
                 Err(e.into())
             }
         }
     }
 
-    /// 等待所有后台异步任务完成
+    /// 等待所有后台异步任务完成（用于长时间服务等待）
     ///
-    /// 这个方法会等待 MemoryEventCoordinator 处理完所有待处理的事件。
-    /// 由于 SessionClosed 事件会触发 LLM 调用（记忆提取 + 层级生成），
-    /// 这个方法会等待足够长的时间让这些操作完成。
-    ///
-    /// # Arguments
-    /// * `max_wait_secs` - 最大等待时间（秒）
-    ///
-    /// # Returns
-    /// 返回是否成功完成（true = 完成，false = 超时）
-    ///
-    /// # Note
-    /// v2.5 改进：使用真正的事件通知机制等待后台任务完成
-    /// 而不是基于时间的启发式等待
+    /// 使用真正的事件通知机制等待，而非固定超时。
+    /// 在退出流程中建议优先使用 `close_session_sync`。
     pub async fn wait_for_background_tasks(&self, max_wait_secs: u64) -> bool {
         use std::time::Duration;
 
@@ -737,32 +776,25 @@ impl MemoryOperations {
                 .wait_for_completion(Duration::from_secs(max_wait_secs))
                 .await
         } else {
-            // 降级：如果没有 coordinator，使用简单的等待
-            warn!("⚠️ MemoryEventCoordinator 未初始化，使用简单等待");
+            // Fallback: if no coordinator, use simple wait
+            warn!("MemoryEventCoordinator not initialized, using simple wait");
             tokio::time::sleep(Duration::from_secs(max_wait_secs.min(5))).await;
             true
         }
     }
 
-    /// 刷新并等待所有后台任务完成（用于退出流程）
+    /// Wait for MemoryEventCoordinator to drain all pending events (deprecated-style polling).
     ///
-    /// 这个方法会：
-    /// 1. 等待当前正在处理的事件完成
-    /// 2. 强制处理 debouncer 中所有待处理的层级更新
-    /// 3. 再次等待确保所有更新完成
-    ///
-    /// 使用事件通知机制而非固定超时，确保真正等待任务完成。
-    /// 由于涉及 LLM 调用，可能需要较长时间。
-    ///
-    /// # Arguments
-    /// * `check_interval_secs` - 检查间隔（秒），默认 1 秒
+    /// Prefer `close_session_sync` for exit flows — it blocks until the pipeline
+    /// completes without polling. This method is retained for legacy call-sites
+    /// where fire-and-forget + explicit wait is still needed.
     pub async fn flush_and_wait(&self, check_interval_secs: Option<u64>) -> bool {
         let interval = std::time::Duration::from_secs(check_interval_secs.unwrap_or(1));
 
         if let Some(ref coordinator) = self.event_coordinator {
             coordinator.flush_and_wait(interval).await
         } else {
-            warn!("⚠️ MemoryEventCoordinator 未初始化，跳过等待");
+            warn!("MemoryEventCoordinator not initialized, skipping wait");
             true
         }
     }
@@ -801,13 +833,13 @@ impl MemoryOperations {
 
         tracing::info!("Manual trigger processing for {:?}/{}", memory_scope, owner_id);
 
-        // 强制更新层级
+        // Force update layers
         if let Some(ref coordinator) = self.event_coordinator {
             coordinator
                 .force_full_update(&memory_scope, owner_id)
                 .await?;
         } else {
-            warn!("MemoryEventCoordinator 未初始化，无法触发处理");
+            warn!("MemoryEventCoordinator not initialized, cannot trigger processing");
             return Ok(ProcessingResult::default());
         }
 

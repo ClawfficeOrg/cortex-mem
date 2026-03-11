@@ -141,8 +141,8 @@ impl LLMClientImpl {
     pub async fn complete(&self, prompt: &str) -> Result<String> {
         use rig::completion::Prompt;
         
-        tracing::info!("🔄 LLM 调用开始 [模型: {}]", self.config.model_efficient);
-        tracing::debug!("📝 Prompt 长度: {} 字符", prompt.len());
+        tracing::info!("LLM call started [model: {}]", self.config.model_efficient);
+        tracing::debug!("Prompt length: {} chars", prompt.len());
         
         let start = std::time::Instant::now();
         
@@ -153,7 +153,7 @@ impl LLMClientImpl {
             .map_err(|e| crate::Error::Llm(format!("LLM completion failed: {}", e)))?;
 
         let elapsed = start.elapsed();
-        tracing::info!("✅ LLM 调用完成 [耗时: {:.2}s, 响应: {} 字符]", elapsed.as_secs_f64(), response.len());
+        tracing::info!("LLM call completed [elapsed: {:.2}s, response: {} chars]", elapsed.as_secs_f64(), response.len());
         
         Ok(response)
     }
@@ -162,8 +162,8 @@ impl LLMClientImpl {
     pub async fn complete_with_system(&self, system: &str, prompt: &str) -> Result<String> {
         use rig::completion::Prompt;
         
-        tracing::info!("🔄 LLM 调用开始 (with system) [模型: {}]", self.config.model_efficient);
-        tracing::debug!("📝 System: {}..., Prompt 长度: {} 字符", 
+        tracing::info!("LLM call started (with system) [model: {}]", self.config.model_efficient);
+        tracing::debug!("System: {}..., Prompt length: {} chars", 
             &system.chars().take(50).collect::<String>(), prompt.len());
         
         let start = std::time::Instant::now();
@@ -175,7 +175,7 @@ impl LLMClientImpl {
             .map_err(|e| crate::Error::Llm(format!("LLM completion failed: {}", e)))?;
             
         let elapsed = start.elapsed();
-        tracing::info!("✅ LLM 调用完成 [耗时: {:.2}s, 响应: {} 字符]", elapsed.as_secs_f64(), response.len());
+        tracing::info!("LLM call completed [elapsed: {:.2}s, response: {} chars]", elapsed.as_secs_f64(), response.len());
         
         Ok(response)
     }
@@ -185,7 +185,7 @@ impl LLMClientImpl {
         let response: String = self.complete(prompt).await?;
         
         // Extract JSON from response (handles markdown code blocks)
-        let json_str = Self::extract_json_from_response(&response);
+        let json_str = Self::extract_json_from_response_static(&response);
         
         // Try to parse as structured response first
         if let Ok(extracted) = serde_json::from_str::<MemoryExtractionResponse>(json_str) {
@@ -238,7 +238,7 @@ impl LLMClientImpl {
     }
 
     /// Extract JSON from LLM response, handling markdown code blocks
-    fn extract_json_from_response(response: &str) -> &str {
+    pub fn extract_json_from_response_static(response: &str) -> &str {
         let trimmed = response.trim();
         
         // If response is wrapped in ```json ... ``` or ``` ... ```
@@ -287,8 +287,8 @@ impl LLMClient for LLMClientImpl {
     async fn complete(&self, prompt: &str) -> Result<String> {
         use rig::completion::Prompt;
         
-        tracing::info!("🔄 LLM 调用开始 [模型: {}]", self.config.model_efficient);
-        tracing::debug!("📝 Prompt 长度: {} 字符", prompt.len());
+        tracing::info!("LLM call started [model: {}]", self.config.model_efficient);
+        tracing::debug!("Prompt length: {} chars", prompt.len());
         
         let start = std::time::Instant::now();
         
@@ -299,7 +299,7 @@ impl LLMClient for LLMClientImpl {
             .map_err(|e| crate::Error::Llm(format!("LLM completion failed: {}", e)))?;
 
         let elapsed = start.elapsed();
-        tracing::info!("✅ LLM 调用完成 [耗时: {:.2}s, 响应: {} 字符]", elapsed.as_secs_f64(), response.len());
+        tracing::info!("LLM call completed [elapsed: {:.2}s, response: {} chars]", elapsed.as_secs_f64(), response.len());
 
         Ok(response)
     }
@@ -307,8 +307,8 @@ impl LLMClient for LLMClientImpl {
     async fn complete_with_system(&self, system: &str, prompt: &str) -> Result<String> {
         use rig::completion::Prompt;
         
-        tracing::info!("🔄 LLM 调用开始 (with system) [模型: {}]", self.config.model_efficient);
-        tracing::debug!("📝 System: {}..., Prompt 长度: {} 字符", 
+        tracing::info!("LLM call started (with system) [model: {}]", self.config.model_efficient);
+        tracing::debug!("System: {}..., Prompt length: {} chars", 
             &system.chars().take(50).collect::<String>(), prompt.len());
         
         let start = std::time::Instant::now();
@@ -320,7 +320,7 @@ impl LLMClient for LLMClientImpl {
             .map_err(|e| crate::Error::Llm(format!("LLM completion failed: {}", e)))?;
             
         let elapsed = start.elapsed();
-        tracing::info!("✅ LLM 调用完成 [耗时: {:.2}s, 响应: {} 字符]", elapsed.as_secs_f64(), response.len());
+        tracing::info!("LLM call completed [elapsed: {:.2}s, response: {} chars]", elapsed.as_secs_f64(), response.len());
             
         Ok(response)
     }
@@ -329,7 +329,7 @@ impl LLMClient for LLMClientImpl {
         let response: String = self.complete(prompt).await?;
         
         // Extract JSON from response (handles markdown code blocks)
-        let json_str = Self::extract_json_from_response(&response);
+        let json_str = Self::extract_json_from_response_static(&response);
         
         // Try to parse as structured response first
         if let Ok(extracted) = serde_json::from_str::<MemoryExtractionResponse>(json_str) {
@@ -399,7 +399,7 @@ If no facts are found, return: {{"facts": []}}
         let response = self.complete(&extraction_prompt).await?;
         
         // Try to extract JSON from the response
-        let json_str = Self::extract_json_from_response(&response);
+        let json_str = Self::extract_json_from_response_static(&response);
         
         // Try to parse as structured facts
         match serde_json::from_str::<crate::llm::extractor_types::StructuredFactExtraction>(json_str) {
@@ -454,7 +454,7 @@ If no facts are found, return: {{"facts": []}}
         let response = self.complete(&extraction_prompt).await?;
         
         // Try to extract JSON from the response
-        let json_str = Self::extract_json_from_response(&response);
+        let json_str = Self::extract_json_from_response_static(&response);
         
         // Try to parse as detailed facts
         match serde_json::from_str::<crate::llm::extractor_types::DetailedFactExtraction>(json_str) {
