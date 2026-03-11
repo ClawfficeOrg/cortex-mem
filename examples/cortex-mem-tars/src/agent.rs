@@ -98,14 +98,61 @@ pub async fn create_memory_agent(
     // 获取租户 operations 用于外部使用
     let tenant_operations = memory_tools.operations().clone();
 
-    // 创建 Rig LLM 客户端用于 Agent 对话
+    // 使用共享的 rebuild_rig_agent 构建 Agent（复用已有 MemoryOperations）
+    let agent = rebuild_rig_agent(config, tenant_operations.clone(), user_info, bot_system_prompt, agent_id)?;
+
+    Ok((agent, tenant_operations))
+}
+
+/// 在已有 MemoryOperations 上重建 Rig Agent（更新 system prompt）
+///
+/// 当 user_info 或 bot_system_prompt 发生变化时，只需重新构建顶层的
+/// Rig Agent，而无需重建底层 MemoryOperations（Qdrant 连接、Embedding
+/// 客户端、MemoryEventCoordinator 等全部复用），避免重复初始化基础设施。
+pub fn rebuild_rig_agent(
+    config: &cortex_mem_config::Config,
+    tenant_operations: Arc<MemoryOperations>,
+    user_info: Option<&str>,
+    bot_system_prompt: Option<&str>,
+    agent_id: &str,
+) -> Result<RigAgent<CompletionModel>, Box<dyn std::error::Error>> {
+    // 用已有的 MemoryOperations 构建 MemoryTools（轻量包装，无 IO）
+    let memory_tools = cortex_mem_rig::MemoryTools::new(tenant_operations);
+
+    // 构建 system prompt
+    let base_system_prompt = build_system_prompt(user_info, agent_id);
+    let system_prompt = if let Some(bot_prompt) = bot_system_prompt {
+        format!("{}\n\n你的角色设定：\n{}", base_system_prompt, bot_prompt)
+    } else {
+        base_system_prompt
+    };
+
+    // 创建 Rig LLM 客户端（仅用于对话，轻量级，无网络连接建立）
     let llm_client = Client::builder()
         .api_key(&config.llm.api_key)
         .base_url(&config.llm.api_base_url)
         .build()?;
 
-    // 构建 system prompt
-    let base_system_prompt = if let Some(info) = user_info {
+    use rig::client::CompletionClient;
+    let agent = llm_client
+        .completions_api()
+        .agent(&config.llm.model_efficient)
+        .preamble(&system_prompt)
+        .default_max_turns(30)
+        .tool(memory_tools.search_tool())
+        .tool(memory_tools.find_tool())
+        .tool(memory_tools.abstract_tool())
+        .tool(memory_tools.overview_tool())
+        .tool(memory_tools.read_tool())
+        .tool(memory_tools.ls_tool())
+        .build();
+
+    Ok(agent)
+}
+
+/// 构建 system prompt（从 create_memory_agent 中提取的共享逻辑）
+fn build_system_prompt(user_info: Option<&str>, agent_id: &str) -> String {
+    if let Some(info) = user_info {
         format!(
             r#"你是一个拥有持久分层记忆能力的智能 AI 助手（TARS）。
 
@@ -450,33 +497,7 @@ URI 来自 ls 或 search 结果中的具体文件路径，例如：
             current_time = chrono::Local::now().format("%Y年%m月%d日 %H:%M:%S"),
             agent_id = agent_id
         )
-    };
-
-    // 追加机器人系统提示词
-    let system_prompt = if let Some(bot_prompt) = bot_system_prompt {
-        format!("{}\n\n你的角色设定：\n{}", base_system_prompt, bot_prompt)
-    } else {
-        base_system_prompt
-    };
-
-    use rig::client::CompletionClient;
-    let completion_model = llm_client
-        .completions_api() // Use completions API to get CompletionModel
-        .agent(&config.llm.model_efficient)
-        .preamble(&system_prompt)
-        .default_max_turns(30) // 🔧 设置默认max_turns为30，避免频繁触发MaxTurnError
-        // 搜索工具（最常用）
-        .tool(memory_tools.search_tool())
-        .tool(memory_tools.find_tool())
-        // 分层访问工具
-        .tool(memory_tools.abstract_tool())
-        .tool(memory_tools.overview_tool())
-        .tool(memory_tools.read_tool())
-        // 文件系统工具
-        .tool(memory_tools.ls_tool())
-        .build();
-
-    Ok((completion_model, tenant_operations))
+    }
 }
 
 /// 从记忆中提取用户基本信息

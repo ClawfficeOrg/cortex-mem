@@ -1,11 +1,12 @@
 use anyhow::{Context, Result};
-use log::{Level, LevelFilter, Metadata, Record};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use tracing::{Level, Subscriber};
+use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
-/// 日志管理器
+/// 日志管理器（保持向后兼容的接口）
 pub struct LogManager {
     #[allow(dead_code)]
     log_file: PathBuf,
@@ -23,7 +24,7 @@ impl LogManager {
             std::fs::create_dir_all(parent).context("无法创建日志目录")?;
         }
 
-        // 打开或创建日志文件
+        // 打开或创建日志文件（追加模式）
         let file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -37,35 +38,13 @@ impl LogManager {
         })
     }
 
-    /// 写入日志
-    pub fn write(&self, level: Level, message: &str) -> Result<()> {
-        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-        let log_line = format!("[{} {}] {}", timestamp, level, message);
-
-        // 写入文件
-        let mut file = self.file.lock().map_err(|e| anyhow::anyhow!("无法获取文件锁: {}", e))?;
-        writeln!(file, "{}", log_line)
-            .context("无法写入日志")?;
-        file.flush().context("无法刷新日志")?;
-
-        // 添加到内存中的日志行
-        let mut lines = self.lines.lock().map_err(|e| anyhow::anyhow!("无法获取日志行锁: {}", e))?;
-        lines.push(log_line.clone());
-
-        // 限制内存中的日志行数
-        if lines.len() > 1000 {
-            let excess = lines.len() - 1000;
-            lines.drain(0..excess);
-        }
-
-        Ok(())
-    }
-
-    /// 读取日志内容
+    /// 读取内存中的最近日志
     pub fn read_logs(&self, max_lines: usize) -> Result<Vec<String>> {
-        let lines = self.lines.lock().map_err(|e| anyhow::anyhow!("无法获取日志行锁: {}", e))?;
+        let lines = self
+            .lines
+            .lock()
+            .map_err(|e| anyhow::anyhow!("无法获取日志行锁: {}", e))?;
 
-        // 返回最后 max_lines 行
         if lines.len() > max_lines {
             Ok(lines[lines.len() - max_lines..].to_vec())
         } else {
@@ -74,44 +53,130 @@ impl LogManager {
     }
 }
 
-/// 自定义 Logger
-struct SimpleLogger {
+/// 自定义 tracing Layer，把日志同时写入文件和内存缓冲
+struct FileLayer {
     manager: Arc<LogManager>,
 }
 
-impl log::Log for SimpleLogger {
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        // 🔧 过滤TRACE和DEBUG日志，只保留INFO及以上级别
-        metadata.level() <= Level::Info
-    }
+impl<S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>> Layer<S>
+    for FileLayer
+{
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let meta = event.metadata();
+        let level = meta.level();
 
-    fn log(&self, record: &Record) {
-        if self.enabled(record.metadata()) {
-            let message = format!("{}", record.args());
-            // 🔇 静默处理日志写入失败，避免干扰TUI
-            let _ = self.manager.write(record.level(), &message);
+        // INFO 级别以上才写入（过滤 DEBUG/TRACE 减少噪音）
+        if *level > Level::INFO {
+            return;
+        }
+
+        // 提取消息和来自 log-bridge 的额外字段
+        let mut visitor = FullVisitor::default();
+        event.record(&mut visitor);
+
+        // target 优先级：
+        //   1. 若是 tracing-log bridge 转来的事件，target 就是 `"log"`，
+        //      此时使用 bridge 附加的 `log.module_path` 字段作为真实来源
+        //   2. 否则直接使用 metadata 中的 target（即 tracing 宏调用点的模块路径）
+        let target = if meta.target() == "log" {
+            visitor
+                .log_module_path
+                .as_deref()
+                .unwrap_or("tars")
+                .to_string()
+        } else {
+            meta.target().to_string()
+        };
+
+        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+        let log_line = format!(
+            "[{} {}] [{}] {}",
+            timestamp, level, target, visitor.message
+        );
+
+        // 写入文件（静默失败，不干扰 TUI）
+        if let Ok(mut file) = self.manager.file.lock() {
+            let _ = writeln!(file, "{}", log_line);
+            let _ = file.flush();
+        }
+
+        // 写入内存缓冲
+        if let Ok(mut lines) = self.manager.lines.lock() {
+            lines.push(log_line);
+            if lines.len() > 1000 {
+                let excess = lines.len() - 1000;
+                lines.drain(0..excess);
+            }
+        }
+    }
+}
+
+/// 从 tracing Event 中提取所有关心的字段：
+/// - `message`       — 日志正文
+/// - `log.module_path` — tracing-log bridge 附加的来源模块路径
+/// - `log.target`    — tracing-log bridge 附加的原始 target（备用）
+#[derive(Default)]
+struct FullVisitor {
+    message: String,
+    log_module_path: Option<String>,
+}
+
+impl tracing::field::Visit for FullVisitor {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        match field.name() {
+            "message" => self.message.push_str(value),
+            "log.module_path" => self.log_module_path = Some(value.to_string()),
+            _ => {}
         }
     }
 
-    fn flush(&self) {}
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "message" {
+            use std::fmt::Write;
+            let _ = write!(self.message, "{:?}", value);
+        }
+    }
 }
 
 /// 初始化日志系统
+///
+/// 统一用 `tracing` 生态作为日志后端：
+/// - `cortex-mem-core` 等子 crate 使用 `tracing::info!` → 直接被 subscriber 捕获
+/// - tars 自身使用 `log::info!`    → 通过 `tracing_log::LogTracer` 转发给 tracing
+///
+/// 所有日志都写入同一个 `app.log` 文件，并在内存中保留最近 1000 条供查阅。
+///
+/// 可通过环境变量 `RUST_LOG` 覆盖默认级别（例如 `RUST_LOG=debug` 开启详细输出）。
 pub fn init_logger(log_dir: &Path) -> Result<Arc<LogManager>> {
     let manager = Arc::new(LogManager::new(log_dir)?);
 
-    // 创建自定义 logger
-    let logger = SimpleLogger {
+    // 桥接 `log` → tracing：让 log::info! / log::warn! 等也被 tracing 捕获。
+    // with_max_level 设为 INFO，过滤掉 log crate 产生的 DEBUG/TRACE 事件。
+    tracing_log::LogTracer::builder()
+        .with_max_level(log::LevelFilter::Info)
+        .init()
+        .ok(); // 若已初始化则忽略（防止测试环境重复 init 报错）
+
+    let file_layer = FileLayer {
         manager: Arc::clone(&manager),
     };
 
-    // 设置全局 logger
-    log::set_logger(Box::leak(Box::new(logger)))
-        .map_err(|e| anyhow::anyhow!("无法设置 logger: {}", e))?;
-    log::set_max_level(LevelFilter::Info);
+    // 环境变量 RUST_LOG 可覆盖默认级别
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
 
-    log::info!("日志系统初始化完成");
-    log::info!("日志文件路径: {}", log_dir.display());
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(file_layer)
+        .try_init()
+        .ok(); // 若已初始化则忽略
+
+    tracing::info!("日志系统初始化完成");
+    tracing::info!("日志文件路径: {}", log_dir.display());
 
     Ok(manager)
 }

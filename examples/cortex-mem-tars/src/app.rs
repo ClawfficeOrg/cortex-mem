@@ -1,4 +1,4 @@
-use crate::agent::{AgentChatHandler, ChatMessage, create_memory_agent, extract_user_basic_info};
+use crate::agent::{AgentChatHandler, ChatMessage, create_memory_agent, extract_user_basic_info, rebuild_rig_agent};
 use crate::config::{BotConfig, ConfigManager};
 use crate::infrastructure::Infrastructure;
 use crate::logger::LogManager;
@@ -797,25 +797,23 @@ impl App {
                             }
                         };
 
-                        // 如果有用户信息，需要重新创建带用户信息的 Agent
+                        // 如果有用户信息，用 rebuild_rig_agent 重建 Agent（复用已有
+                        // MemoryOperations，不重建 Qdrant/Embedding 等底层基础设施）
                         if user_info.is_some() {
                             let config = infrastructure.config();
-                            match create_memory_agent(
-                                config.cortex.data_dir(),
+                            match rebuild_rig_agent(
                                 config,
+                                tenant_ops.clone(),
                                 user_info.as_deref(),
                                 Some(bot.system_prompt.as_str()),
                                 &bot.id,
-                                &self.user_id,
-                            )
-                            .await
-                            {
-                                Ok((agent_with_userinfo, _)) => {
+                            ) {
+                                Ok(agent_with_userinfo) => {
                                     self.rig_agent = Some(agent_with_userinfo);
                                     log::info!("✅ 已创建带用户信息的 Agent");
                                 }
                                 Err(e) => {
-                                    log::error!("重新创建带用户信息的 Agent 失败: {}", e);
+                                    log::error!("重建带用户信息的 Agent 失败: {}", e);
                                     self.rig_agent = Some(rig_agent);
                                 }
                             }
