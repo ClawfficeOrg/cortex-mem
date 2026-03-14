@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Layered semantic memory for OpenClaw with L0/L1/L2 tiered retrieval, easy setup, and migration from native memory",
   "kind": "memory",
-  "skills": ["skill/memclaw"],
+  "skills": ["skill"],
   "configSchema": {
     "type": "object",
     "properties": {
