@@ -68,7 +68,7 @@ export default function memclawPlugin(api: PluginAPI) {
 export const plugin = {
   id: "memclaw",
   name: "MemClaw",
-  version: "0.1.0",
+  version: "0.9.0",
   configSchema: {
     type: "object",
     properties: {

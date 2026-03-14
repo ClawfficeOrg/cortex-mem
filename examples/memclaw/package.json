@@ -24,8 +24,7 @@
       "dist/index.js"
     ],
     "skills": [
-      "skill/memclaw-guide",
-      "skill/memclaw-admin"
+      "skill/memclaw"
     ]
   },
   "devDependencies": {
