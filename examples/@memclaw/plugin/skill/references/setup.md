@@ -7,53 +7,14 @@ Installation and configuration guide for MemClaw.
 | Requirement | Details |
 |-------------|---------|
 | **Platforms** | Windows x86, macOS Apple Silicon |
-| **Node.js** | ≥ 22.0.0 |
+| **Node.js** | ≥ 20.0.0 |
 | **OpenClaw** | Installed and configured |
 
 ## Installation
 
-### Method 1: Install from ClawHub
-
 ```bash
-openclaw plugins install memclaw
+openclaw plugins install @memclaw/plugin
 ```
-
-### Method 2: Local Development Installation
-
-For developers using a local version or developing the plugin:
-
-```bash
-# Clone the repository
-git clone https://github.com/sopaco/cortex-mem.git
-cd cortex-mem/examples/memclaw
-
-# Install dependencies
-bun install
-
-# Build the plugin
-bun run build
-
-# Create symlink to plugin directory
-mkdir -p ~/.openclaw/plugins
-ln -sf "$(pwd)" ~/.openclaw/plugins/memclaw
-```
-
-Configure in `openclaw.json` with local path:
-
-```json
-{
-  "plugins": {
-    "entries": {
-      "memclaw": {
-        "enabled": true,
-        "path": "./plugins/memclaw"
-      }
-    }
-  }
-}
-```
-
-After code changes, rebuild with `bun run build` and restart OpenClaw.
 
 ## OpenClaw Configuration
 
