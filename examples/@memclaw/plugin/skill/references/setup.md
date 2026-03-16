@@ -27,7 +27,7 @@ MemClaw binaries (Qdrant, cortex-mem-service, cortex-mem-cli) are distributed vi
 - `@memclaw/bin-darwin-arm64` — macOS Apple Silicon
 - `@memclaw/bin-win-x64` — Windows x64
 
-These packages are installed automatically as optional dependencies when installing `@memclaw/plugin`.
+These packages are installed automatically as optional dependencies when installing `@memclaw/memclaw`.
 
 ### Manual Binary Installation
 

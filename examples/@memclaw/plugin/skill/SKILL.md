@@ -27,7 +27,7 @@ The search engine queries all three layers internally and returns unified result
 
 ### Step 1: Check if Plugin is Installed
 
-Check if `@memclaw/plugin` is in the OpenClaw plugins list:
+Check if `@memclaw/memclaw` is in the OpenClaw plugins list:
 - Look for `memclaw` in `~/.openclaw/extensions/`
 - Or check `plugins.installs` in `openclaw.json`
 
@@ -36,7 +36,7 @@ Check if `@memclaw/plugin` is in the OpenClaw plugins list:
 If the plugin is not installed, execute:
 
 ```bash
-openclaw plugins install @memclaw/plugin
+openclaw plugins install @memclaw/memclaw
 ```
 
 This will:

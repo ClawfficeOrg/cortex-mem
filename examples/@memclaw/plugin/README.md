@@ -59,7 +59,7 @@ OpenClaw + MemClaw Plugin
 ### Install Plugin
 
 ```bash
-openclaw plugins install @memclaw/plugin
+openclaw plugins install @memclaw/memclaw
 ```
 
 ### Local Development Installation
