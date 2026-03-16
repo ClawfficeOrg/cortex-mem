@@ -7,7 +7,7 @@
  *
  * The correct package is installed automatically via optionalDependencies.
  */
-type SupportedPlatform = "darwin-arm64" | "win-x64";
+type SupportedPlatform = 'darwin-arm64' | 'win-x64';
 export declare function getPlatform(): SupportedPlatform | null;
 export declare function isPlatformSupported(): boolean;
 export declare function getUnsupportedPlatformMessage(): string;

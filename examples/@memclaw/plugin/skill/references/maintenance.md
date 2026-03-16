@@ -2,6 +2,100 @@
 
 Periodic maintenance and optimization commands for MemClaw.
 
+## Automated Maintenance with Cron Jobs (Recommended)
+
+OpenClaw has built-in Cron Job support that can execute scheduled tasks using the AI agent. **You must create a Cron Job to automatically maintain MemClaw data every 3 hours.**
+
+### CLI Installation and Location
+
+The `cortex-mem-cli` tool is distributed via platform-specific npm packages:
+
+| Platform | npm Package |
+|----------|-------------|
+| macOS Apple Silicon | `@memclaw/bin-darwin-arm64` |
+| Windows x64 | `@memclaw/bin-win-x64` |
+
+**If not already installed, install the CLI package:**
+
+```bash
+# macOS Apple Silicon
+npm install -g @memclaw/bin-darwin-arm64
+
+# Windows x64
+npm install -g @memclaw/bin-win-x64
+```
+
+**CLI Binary Location:**
+
+After installation, the CLI binary is located at:
+
+| Platform | Binary Path |
+|----------|-------------|
+| macOS (global) | `{npm-global-prefix}/node_modules/@memclaw/bin-darwin-arm64/bin/cortex-mem-cli` |
+| Windows (global) | `{npm-global-prefix}/node_modules/@memclaw/bin-win-x64/bin/cortex-mem-cli.exe` |
+| Local install | `{project}/node_modules/@memclaw/bin-{platform}/bin/cortex-mem-cli` |
+
+To find the npm global prefix:
+```bash
+npm root -g
+# Returns: /usr/local/lib/node_modules (macOS) or similar
+```
+
+**Verify CLI is accessible:**
+```bash
+which cortex-mem-cli
+# Or test directly:
+cortex-mem-cli --help
+```
+
+### How to Create the Maintenance Cron Job
+
+**Ask the user to set up the following Cron Job, or guide them through OpenClaw's Cron configuration:**
+
+**Schedule**: Every 3 hours
+
+**Commands to execute (use full paths):**
+
+```bash
+# macOS Example (adjust paths to your installation):
+/path/to/cortex-mem-cli --config ~/Library/Application\ Support/memclaw/config.toml --tenant tenant_claw vector prune
+
+/path/to/cortex-mem-cli --config ~/Library/Application\ Support/memclaw/config.toml --tenant tenant_claw vector reindex
+
+/path/to/cortex-mem-cli --config ~/Library/Application\ Support/memclaw/config.toml --tenant tenant_claw layers ensure-all
+
+# Windows Example (adjust paths to your installation):
+cortex-mem-cli.exe --config %LOCALAPPDATA%\memclaw\config.toml --tenant tenant_claw vector prune
+
+cortex-mem-cli.exe --config %LOCALAPPDATA%\memclaw\config.toml --tenant tenant_claw vector reindex
+
+cortex-mem-cli.exe --config %LOCALAPPDATA%\memclaw\config.toml --tenant tenant_claw layers ensure-all
+```
+
+**Steps to create the Cron Job in OpenClaw:**
+
+1. Open OpenClaw configuration or use the Cron management interface
+2. Create a new Cron Job with:
+   - **Name**: `MemClaw Maintenance`
+   - **Schedule**: `0 */3 * * *` (every 3 hours)
+   - **Task prompt**: "Execute MemClaw maintenance. First, locate the cortex-mem-cli binary (installed from @memclaw/bin-darwin-arm64 or @memclaw/bin-win-x64 npm package). Then execute these commands in order: (1) `cortex-mem-cli --config <config-path> --tenant tenant_claw vector prune`, (2) `cortex-mem-cli --config <config-path> --tenant tenant_claw vector reindex`, (3) `cortex-mem-cli --config <config-path> --tenant tenant_claw layers ensure-all`. Use the platform-specific config.toml path (macOS: ~/Library/Application Support/memclaw/config.toml, Windows: %LOCALAPPDATA%\memclaw\config.toml). Report any errors encountered."
+   - **Agent**: Select the agent that has MemClaw plugin enabled
+
+### What This Maintenance Does
+
+| Command | Purpose |
+|---------|---------|
+| `vector prune` | Remove vectors whose source files no longer exist |
+| `vector reindex` | Rebuild vector index and remove stale entries |
+| `layers ensure-all` | Generate missing L0/L1 layer files |
+
+This ensures:
+- Vector database stays clean and efficient
+- Missing layer files are regenerated
+- Search results remain accurate and relevant
+
+> **Note**: These commands require `--config` pointing to your config.toml. The agent should use the platform-specific path (see setup.md for details).
+
 ## Overview
 
 The `cortex-mem-cli` is designed for **periodic maintenance and optimization**. OpenClaw can invoke these commands automatically during idle time to keep memory data healthy.

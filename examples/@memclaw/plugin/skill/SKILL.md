@@ -70,7 +70,23 @@ For advanced users, you can also edit the config file directly:
 
 ## First-Time Setup (Agent Action Required)
 
-When MemClaw is used for the first time, **YOU MUST**:
+**Before using MemClaw for the first time, you MUST verify the prerequisites are met:**
+
+### Step 1: Check Prerequisites (REQUIRED)
+
+Consult `references/setup.md` and verify:
+
+1. **Platform support**: macOS Apple Silicon or Windows x64 only
+2. **Binaries installed**: Check `@memclaw/bin-*` package is installed
+3. **LLM/Embedding API configured**: API keys are set in OpenClaw plugin settings
+4. **Services accessible**: Qdrant (ports 6333/6334) and cortex-mem-service (port 8085) can start
+
+**If any prerequisite is missing:**
+- Guide user through installation (see `references/setup.md`)
+- Help configure API keys in OpenClaw plugin settings
+- Do NOT proceed with memory operations until prerequisites are met
+
+### Step 2: Verify Configuration
 
 1. **Check if LLM/Embedding API is configured** in OpenClaw plugin settings
 2. **If not configured**, ask the user for:
@@ -80,13 +96,19 @@ When MemClaw is used for the first time, **YOU MUST**:
 
 The configuration will be automatically synced when OpenClaw restarts.
 
+### Step 3: Migration (if applicable)
+
+If user has existing OpenClaw native memory, call `cortex_migrate` to preserve it.
+
 ## Decision Flow
 
 1. **Need to find something** → `cortex_search`
 2. **Need more context** → `cortex_recall`
 3. **Save something important** → `cortex_add_memory`
-4. **Conversation complete** → `cortex_close_session`
+4. **Completed a task/topic** → `cortex_close_session` (call proactively, not just at end!)
 5. **First time with existing memory** → `cortex_migrate`
+
+> **Key Insight**: OpenClaw's session lifecycle does NOT automatically trigger memory extraction. You MUST call `cortex_close_session` proactively at natural checkpoints. Do NOT wait until conversation end.
 
 ## Tools
 
@@ -96,7 +118,7 @@ The configuration will be automatically synced when OpenClaw restarts.
 | `cortex_recall` | Recall with full context (snippet + content) | Need detailed content, not just summary |
 | `cortex_add_memory` | Store message for future retrieval | Persist important information |
 | `cortex_list_sessions` | List all memory sessions | Verify sessions, audit usage |
-| `cortex_close_session` | Close session and trigger extraction | Conversation complete (takes 30-60s) |
+| `cortex_close_session` | Trigger memory extraction and archival | **Call at checkpoints**: after completing tasks, topic shifts, or significant exchanges. NOT just at conversation end! |
 | `cortex_migrate` | Migrate from OpenClaw native memory | First time setup with existing memory |
 
 ### Quick Examples
