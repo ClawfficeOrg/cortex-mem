@@ -55,6 +55,7 @@ exports.startCortexMemService = startCortexMemService;
 exports.stopAllServices = stopAllServices;
 exports.ensureAllServices = ensureAllServices;
 exports.getCliPath = getCliPath;
+exports.executeCliCommand = executeCliCommand;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
@@ -281,5 +282,61 @@ async function ensureAllServices(log) {
 // Get CLI binary path for external commands (like migration)
 function getCliPath() {
     return getBinaryPath('cortex-mem-cli');
+}
+async function executeCliCommand(args, configPath, tenantId, timeout = 120000) {
+    const cliPath = getCliPath();
+    if (!cliPath) {
+        return {
+            success: false,
+            stdout: '',
+            stderr: 'cortex-mem-cli binary not found',
+            exitCode: 1,
+        };
+    }
+    const fullArgs = [
+        '--config', configPath,
+        '--tenant', tenantId,
+        ...args
+    ];
+    return new Promise((resolve) => {
+        let stdout = '';
+        let stderr = '';
+        const proc = (0, child_process_1.spawn)(cliPath, fullArgs, {
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        proc.stdout?.on('data', (data) => {
+            stdout += data.toString();
+        });
+        proc.stderr?.on('data', (data) => {
+            stderr += data.toString();
+        });
+        const timer = setTimeout(() => {
+            proc.kill();
+            resolve({
+                success: false,
+                stdout,
+                stderr: stderr + '\nCommand timed out',
+                exitCode: null,
+            });
+        }, timeout);
+        proc.on('close', (code) => {
+            clearTimeout(timer);
+            resolve({
+                success: code === 0,
+                stdout,
+                stderr,
+                exitCode: code,
+            });
+        });
+        proc.on('error', (err) => {
+            clearTimeout(timer);
+            resolve({
+                success: false,
+                stdout,
+                stderr: err.message,
+                exitCode: 1,
+            });
+        });
+    });
 }
 //# sourceMappingURL=binaries.js.map

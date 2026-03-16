@@ -21,6 +21,51 @@ MemClaw provides **three-layer semantic memory** with tiered retrieval:
 
 The search engine queries all three layers internally and returns unified results with `snippet` and `content`.
 
+## Installation
+
+**Before using MemClaw, ensure the plugin is installed:**
+
+### Step 1: Check if Plugin is Installed
+
+Check if `@memclaw/plugin` is in the OpenClaw plugins list:
+- Look for `memclaw` in `~/.openclaw/extensions/`
+- Or check `plugins.installs` in `openclaw.json`
+
+### Step 2: Install if Missing
+
+If the plugin is not installed, execute:
+
+```bash
+openclaw plugins install @memclaw/plugin
+```
+
+This will:
+- Download the plugin from npm registry
+- Install platform-specific binaries (`@memclaw/bin-darwin-arm64` or `@memclaw/bin-win-x64`)
+- Register the plugin in OpenClaw
+
+### Step 3: Enable the Plugin
+
+Enable MemClaw in your `openclaw.json`:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "memclaw": {
+        "enabled": true
+      }
+    }
+  }
+}
+```
+
+### Step 4: Restart OpenClaw
+
+Restart OpenClaw to activate the plugin and start services.
+
+> **Note**: The plugin auto-installs platform binaries as optional dependencies. If binaries are missing, see `references/setup.md` for manual installation.
+
 ## Pre-Use Requirements
 
 **IMPORTANT**: Before using MemClaw for the first time, you MUST ensure:

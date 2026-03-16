@@ -169,7 +169,77 @@ Use this once during initial setup to preserve your existing memories.`,
             properties: {},
         },
     },
+    cortex_maintenance: {
+        name: "cortex_maintenance",
+        description: `Perform periodic maintenance on MemClaw data.
+
+This executes:
+1. vector prune - Remove vectors whose source files no longer exist
+2. vector reindex - Rebuild vector index and remove stale entries
+3. layers ensure-all - Generate missing L0/L1 layer files
+
+**This tool is typically called automatically by a scheduled Cron job.**
+You can also call it manually when:
+- Search results seem incomplete or stale
+- After recovering from a crash or data corruption
+- When disk space cleanup is needed
+
+**Parameters:**
+- dryRun: Preview changes without executing (default: false)
+- commands: Which commands to run (default: all)`,
+        inputSchema: {
+            type: "object",
+            properties: {
+                dryRun: {
+                    type: "boolean",
+                    description: "Preview changes without executing",
+                    default: false,
+                },
+                commands: {
+                    type: "array",
+                    items: {
+                        type: "string",
+                        enum: ["prune", "reindex", "ensure-all"],
+                    },
+                    description: "Which maintenance commands to run",
+                    default: ["prune", "reindex", "ensure-all"],
+                },
+            },
+        },
+    },
 };
+// Cron Job name for maintenance
+const MAINTENANCE_CRON_NAME = "memclaw-maintenance";
+// Register maintenance Cron Job
+async function registerMaintenanceCronJob(api, log) {
+    // Check if runtime API is available
+    if (!api.runtime?.tools) {
+        log("Runtime API not available, skipping Cron Job registration");
+        return;
+    }
+    try {
+        const cronApi = api.runtime.tools.get("cron");
+        // Register the maintenance job (runs every 3 hours)
+        await cronApi.call({
+            method: "add",
+            params: {
+                name: MAINTENANCE_CRON_NAME,
+                schedule: { kind: "cron", expr: "0 */3 * * *" },
+                sessionTarget: "isolated",
+                payload: {
+                    kind: "agentTurn",
+                    message: "Execute MemClaw maintenance using the cortex_maintenance tool with default settings. Run vector prune, reindex, and layer ensure-all commands. Report any errors encountered.",
+                },
+                delivery: { mode: "none" },
+            },
+        });
+        log("Registered maintenance Cron Job (runs every 3 hours)");
+    }
+    catch (err) {
+        log(`Failed to register Cron Job: ${err}`);
+        // Non-fatal error, continue
+    }
+}
 function createPlugin(api) {
     const config = (api.pluginConfig ?? {});
     const serviceUrl = config.serviceUrl ?? "http://localhost:8085";
@@ -258,6 +328,8 @@ function createPlugin(api) {
                 await client.switchTenant(tenantId);
                 log(`Switched to tenant: ${tenantId}`);
                 log("MemClaw services started successfully");
+                // Register scheduled maintenance Cron Job
+                await registerMaintenanceCronJob(api, log);
             }
             catch (err) {
                 api.logger.error(`Failed to start services: ${err}`);
@@ -462,6 +534,72 @@ function createPlugin(api) {
                 api.logger.error(`cortex_migrate failed: ${message}`);
                 return { error: `Migration failed: ${message}` };
             }
+        },
+    });
+    // cortex_maintenance
+    api.registerTool({
+        name: toolSchemas.cortex_maintenance.name,
+        description: toolSchemas.cortex_maintenance.description,
+        parameters: toolSchemas.cortex_maintenance.inputSchema,
+        execute: async (_id, params) => {
+            const input = params;
+            const dryRun = input.dryRun ?? false;
+            const commands = input.commands ?? ["prune", "reindex", "ensure-all"];
+            const currentConfigPath = (0, config_js_1.getConfigPath)();
+            const results = [];
+            for (const cmd of commands) {
+                let cliArgs;
+                let description;
+                switch (cmd) {
+                    case "prune":
+                        cliArgs = ["vector", "prune"];
+                        if (dryRun)
+                            cliArgs.push("--dry-run");
+                        description = "Vector Prune";
+                        break;
+                    case "reindex":
+                        cliArgs = ["vector", "reindex"];
+                        description = "Vector Reindex";
+                        break;
+                    case "ensure-all":
+                        cliArgs = ["layers", "ensure-all"];
+                        description = "Layers Ensure-All";
+                        break;
+                    default:
+                        continue;
+                }
+                api.logger.info(`[maintenance] Running: ${description}`);
+                try {
+                    const result = await (0, binaries_js_1.executeCliCommand)(cliArgs, currentConfigPath, tenantId, 300000);
+                    results.push({
+                        command: description,
+                        success: result.success,
+                        output: result.stdout || result.stderr,
+                    });
+                    if (!result.success) {
+                        api.logger.warn(`[maintenance] ${description} failed: ${result.stderr}`);
+                    }
+                }
+                catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    results.push({
+                        command: description,
+                        success: false,
+                        output: message,
+                    });
+                    api.logger.error(`[maintenance] ${description} error: ${message}`);
+                }
+            }
+            const summary = results
+                .map((r) => `${r.command}: ${r.success ? "OK" : "FAILED"}`)
+                .join("\n");
+            const successCount = results.filter((r) => r.success).length;
+            return {
+                content: `Maintenance ${dryRun ? "(dry run) " : ""}completed:\n${summary}\n\n${successCount}/${results.length} commands succeeded.`,
+                dryRun,
+                results,
+                success: successCount === results.length,
+            };
         },
     });
     log("MemClaw plugin initialized");

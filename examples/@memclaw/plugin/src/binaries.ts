@@ -297,3 +297,81 @@ export async function ensureAllServices(log?: (msg: string) => void): Promise<Se
 export function getCliPath(): string | null {
 	return getBinaryPath('cortex-mem-cli');
 }
+
+// Execute CLI command and return output
+export interface CliResult {
+	success: boolean;
+	stdout: string;
+	stderr: string;
+	exitCode: number | null;
+}
+
+export async function executeCliCommand(
+	args: string[],
+	configPath: string,
+	tenantId: string,
+	timeout: number = 120000
+): Promise<CliResult> {
+	const cliPath = getCliPath();
+	if (!cliPath) {
+		return {
+			success: false,
+			stdout: '',
+			stderr: 'cortex-mem-cli binary not found',
+			exitCode: 1,
+		};
+	}
+
+	const fullArgs = [
+		'--config', configPath,
+		'--tenant', tenantId,
+		...args
+	];
+
+	return new Promise((resolve) => {
+		let stdout = '';
+		let stderr = '';
+
+		const proc = spawn(cliPath, fullArgs, {
+			stdio: ['ignore', 'pipe', 'pipe'],
+		});
+
+		proc.stdout?.on('data', (data) => {
+			stdout += data.toString();
+		});
+
+		proc.stderr?.on('data', (data) => {
+			stderr += data.toString();
+		});
+
+		const timer = setTimeout(() => {
+			proc.kill();
+			resolve({
+				success: false,
+				stdout,
+				stderr: stderr + '\nCommand timed out',
+				exitCode: null,
+			});
+		}, timeout);
+
+		proc.on('close', (code) => {
+			clearTimeout(timer);
+			resolve({
+				success: code === 0,
+				stdout,
+				stderr,
+				exitCode: code,
+			});
+		});
+
+		proc.on('error', (err) => {
+			clearTimeout(timer);
+			resolve({
+				success: false,
+				stdout,
+				stderr: err.message,
+				exitCode: 1,
+			});
+		});
+	});
+}
