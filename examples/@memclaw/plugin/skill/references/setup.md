@@ -67,66 +67,57 @@ The `config.toml` file should be placed directly in this directory.
 
 **CRITICAL**: The `config.toml` file MUST be placed in the data directory BEFORE starting cortex-mem-service.
 
-Create `config.toml` with the following content:
+Users only need to configure LLM/Embedding API keys. All other settings use sensible defaults.
+
+Create `config.toml` with the following minimal content:
 
 ```toml
 # MemClaw Configuration
-#
-# Fill in the required values marked with [REQUIRED] before starting the service.
+# Only llm.api_key and embedding.api_key are required.
 
-# ============================================================
+# LLM Configuration [REQUIRED]
+[llm]
+api_base_url = "https://api.openai.com/v1"
+api_key = "your-api-key-here"
+
+# Embedding Configuration [REQUIRED]
+[embedding]
+api_base_url = "https://api.openai.com/v1"
+api_key = "your-api-key-here"
+```
+
+**Full configuration with all defaults:**
+
+```toml
 # Qdrant Vector Database Configuration
-# ============================================================
 [qdrant]
-# Qdrant gRPC API URL
 url = "http://localhost:6334"
-# Collection name for storing memory vectors
 collection_name = "memclaw"
-# Connection timeout in seconds
 timeout_secs = 30
 
-# ============================================================
-# LLM Configuration [REQUIRED for memory processing]
-# ============================================================
+# LLM Configuration [REQUIRED]
 [llm]
-# Your LLM API endpoint (OpenAI-compatible)
 api_base_url = "https://api.openai.com/v1"
-# Your API key [REQUIRED]
 api_key = "your-api-key-here"
-# Model for memory extraction and layer generation
 model_efficient = "gpt-5-mini"
 temperature = 0.1
-max_tokens = 65535
+max_tokens = 4096
 
-# ============================================================
-# Embedding Configuration [REQUIRED for vector search]
-# ============================================================
+# Embedding Configuration [REQUIRED]
 [embedding]
-# Your embedding API endpoint (OpenAI-compatible)
 api_base_url = "https://api.openai.com/v1"
-# Your API key [REQUIRED - can be same as llm.api_key]
 api_key = "your-api-key-here"
 model_name = "text-embedding-3-small"
 batch_size = 10
 timeout_secs = 30
 
-# ============================================================
 # Service Configuration
-# ============================================================
 [server]
 host = "localhost"
 port = 8085
 
-# ============================================================
 # Cortex Memory Settings
-# ============================================================
 [cortex]
-# Data directory path - MUST match the --data-dir argument
-# Default paths by platform:
-#   macOS:   "~/Library/Application Support/memclaw"
-#   Windows: "%LOCALAPPDATA%\\memclaw"
-#   Linux:   "~/.local/share/memclaw"
-data_dir = "."
 enable_intent_analysis = false
 ```
 
@@ -156,7 +147,6 @@ To start manually, run the Qdrant binary from the platform package with:
 
 Arguments:
 - `--data-dir <path>` — Path to data directory containing `config.toml` (**REQUIRED**)
-- `--config <path>` — Path to config file (optional, defaults to `config.toml` in data directory)
 
 Example:
 ```
@@ -228,7 +218,6 @@ If binaries are missing:
 3. Verify required fields in `config.toml`:
    - `llm.api_key` is non-empty
    - `embedding.api_key` is non-empty
-   - `cortex.data_dir` matches `--data-dir` argument
 
 Default data directories:
 | Platform | Path |

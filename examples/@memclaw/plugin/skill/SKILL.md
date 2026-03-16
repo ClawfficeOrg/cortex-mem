@@ -26,13 +26,10 @@ The search engine queries all three layers internally and returns unified result
 **IMPORTANT**: Before using MemClaw for the first time, you MUST ensure:
 
 1. **Qdrant** is running on port 6333/6334
-2. **cortex-mem-service** is running on port 8085 with `--data-dir` and valid `config.toml`
+2. **cortex-mem-service** is running on port 8085 with `--data-dir`
 3. **LLM/Embedding API keys** are configured in `config.toml`
 
-**Manual Configuration Required**: Users must manually configure the following in `config.toml`:
-- `llm.api_key` — LLM API key for memory processing
-- `embedding.api_key` — Embedding API key for vector search
-- `llm.api_base_url` / `embedding.api_base_url` — API endpoints (if not using OpenAI default)
+**User Configuration**: Only `llm.api_key` and `embedding.api_key` are required. All other settings use defaults.
 
 > **See `references/setup.md`** for complete installation, service setup, and configuration instructions.
 
