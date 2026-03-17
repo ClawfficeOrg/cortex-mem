@@ -1,6 +1,5 @@
 # MemClaw
 
-[![Version](https://img.shields.io/badge/version-0.9.16-blue)](https://github.com/sopaco/cortex-mem)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Layered semantic memory plugin for OpenClaw with L0/L1/L2 tiered retrieval, automatic service management, and migration support from OpenClaw native memory.

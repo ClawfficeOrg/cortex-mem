@@ -1,6 +1,5 @@
 # MemClaw
 
-[![Version](https://img.shields.io/badge/version-0.9.16-blue)](https://github.com/sopaco/cortex-mem)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 OpenClaw 的分层语义记忆插件，支持 L0/L1/L2 三层检索、自动服务管理，以及从 OpenClaw 原生记忆迁移。
