@@ -36,23 +36,23 @@ function memclawPlugin(api) {
 }
 // Named export - object style registration
 exports.plugin = {
-    id: "memclaw",
-    name: "MemClaw",
-    version: "0.9.12",
+    id: 'memclaw',
+    name: 'MemClaw',
+    version: '0.9.13',
     configSchema: {
-        type: "object",
+        type: 'object',
         properties: {
-            serviceUrl: { type: "string", default: "http://localhost:8085" },
-            defaultSessionId: { type: "string", default: "default" },
-            searchLimit: { type: "integer", default: 10 },
-            minScore: { type: "number", default: 0.6 },
-            tenantId: { type: "string", default: "tenant_claw" },
-            autoStartServices: { type: "boolean", default: true },
+            serviceUrl: { type: 'string', default: 'http://localhost:8085' },
+            defaultSessionId: { type: 'string', default: 'default' },
+            searchLimit: { type: 'integer', default: 10 },
+            minScore: { type: 'number', default: 0.6 },
+            tenantId: { type: 'string', default: 'tenant_claw' },
+            autoStartServices: { type: 'boolean', default: true }
         },
-        required: [],
+        required: []
     },
     register(api) {
         return (0, plugin_impl_js_1.createPlugin)(api);
-    },
+    }
 };
 //# sourceMappingURL=index.js.map

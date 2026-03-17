@@ -1,134 +1,134 @@
-# 故障排查指南
+# Troubleshooting Guide
 
-MemClaw 常见问题及解决方案。
+Common MemClaw issues and their solutions.
 
-## 安装问题
+## Installation Issues
 
-### 平台不支持
+### Platform Not Supported
 
-**症状**：显示 "Platform not supported" 错误
+**Symptoms**: "Platform not supported" error is displayed
 
-**解决方案**：
-- 确认您使用的是 macOS Apple Silicon (M1/M2/M3) 或 Windows x64
-- 其他平台暂不支持
+**Solutions**:
+- Confirm you are using macOS Apple Silicon (M1/M2/M3) or Windows x64
+- Other platforms are not currently supported
 
-### 插件安装失败
+### Plugin Installation Failed
 
-**症状**：`openclaw plugins install @memclaw/memclaw` 失败
+**Symptoms**: `openclaw plugins install @memclaw/memclaw` fails
 
-**解决方案**：
-1. 检查网络连接
-2. 确认 npm 仓库可访问
-3. 尝试使用代理或镜像源
+**Solutions**:
+1. Check network connection
+2. Confirm npm registry is accessible
+3. Try using a proxy or mirror source
 
-## 配置问题
+## Configuration Issues
 
-### API 密钥无效
+### Invalid API Key
 
-**症状**：搜索或记忆操作返回 API 错误
+**Symptoms**: Search or memory operations return API errors
 
-**解决方案**：
-1. 验证 `llmApiKey` 和 `embeddingApiKey` 在 OpenClaw 插件设置中已正确配置
-2. 确认 API 密钥有效且有足够额度
-3. 确认 `llmApiBaseUrl` 和 `embeddingApiBaseUrl` 对于您的提供商是正确的
-4. 验证到 API 端点的网络连接
+**Solutions**:
+1. Verify `llmApiKey` and `embeddingApiKey` are correctly configured in OpenClaw plugin settings
+2. Confirm API keys are valid and have sufficient quota
+3. Confirm `llmApiBaseUrl` and `embeddingApiBaseUrl` are correct for your provider
+4. Verify network connectivity to API endpoints
 
-### 配置未生效
+### Configuration Not Taking Effect
 
-**症状**：修改配置后服务行为未改变
+**Symptoms**: Service behavior doesn't change after modifying configuration
 
-**解决方案**：
-1. 确保保存了配置文件
-2. 重启 OpenClaw 以应用更改
-3. 检查配置文件语法是否正确（JSON 格式）
+**Solutions**:
+1. Ensure configuration file was saved
+2. Restart OpenClaw to apply changes
+3. Check configuration file syntax for errors (JSON format)
 
-## 服务问题
+## Service Issues
 
-### 服务无法启动
+### Service Won't Start
 
-**症状**：插件加载时服务启动失败
+**Symptoms**: Service fails to start when plugin loads
 
-**解决方案**：
-1. 检查端口 6333、6334、8085 是否被其他应用占用
-2. 确认 API 密钥已在 OpenClaw 插件设置中配置
-3. 查看 OpenClaw 日志获取详细错误信息
+**Solutions**:
+1. Check if ports 6333, 6334, 8085 are occupied by other applications
+2. Confirm API keys are configured in OpenClaw plugin settings
+3. Check OpenClaw logs for detailed error messages
 
-### 服务不可达
+### Service Unreachable
 
-**症状**：工具调用返回连接错误
+**Symptoms**: Tool calls return connection errors
 
-**解决方案**：
-1. 确认 OpenClaw 已重启且插件已加载
-2. 检查 `autoStartServices` 配置项是否为 `true`（默认）
-3. 验证防火墙允许这些端口的本地连接
+**Solutions**:
+1. Confirm OpenClaw has been restarted and plugin is loaded
+2. Check if `autoStartServices` configuration is set to `true` (default)
+3. Verify firewall allows local connections on these ports
 
-## 使用问题
+## Usage Issues
 
-### 搜索无结果
+### No Search Results
 
-**症状**：`cortex_search` 返回空结果
+**Symptoms**: `cortex_search` returns empty results
 
-**解决方案**：
-1. 运行 `cortex_list_sessions` 验证会话是否存在
-2. 降低 `min_score` 阈值（例如从 0.6 降到 0.4）
-3. 尝试不同的查询词或同义词
-4. 确认之前已调用 `cortex_add_memory` 或 `cortex_close_session` 存储记忆
+**Solutions**:
+1. Run `cortex_list_sessions` to verify sessions exist
+2. Lower `min_score` threshold (e.g., from 0.6 to 0.4)
+3. Try different query terms or synonyms
+4. Confirm that `cortex_add_memory` or `cortex_close_session` has been called previously to store memories
 
-### 记忆提取失败
+### Memory Extraction Failed
 
-**症状**：`cortex_close_session` 执行失败或结果不完整
+**Symptoms**: `cortex_close_session` fails or produces incomplete results
 
-**解决方案**：
-1. 验证 LLM API 配置正确
-2. 检查 API 额度是否充足
-3. 查看 OpenClaw 日志获取详细错误信息
+**Solutions**:
+1. Verify LLM API configuration is correct
+2. Check if API quota is sufficient
+3. Check OpenClaw logs for detailed error messages
 
-### 迁移失败
+### Migration Failed
 
-**症状**：`cortex_migrate` 执行失败
+**Symptoms**: `cortex_migrate` fails to execute
 
-**解决方案**：
-1. 确认 OpenClaw 工作区位于 `~/.openclaw/workspace`
-2. 确认记忆文件存在于 `~/.openclaw/workspace/memory/`
-3. 验证文件权限正确
+**Solutions**:
+1. Confirm OpenClaw workspace is located at `~/.openclaw/workspace`
+2. Confirm memory files exist at `~/.openclaw/workspace/memory/`
+3. Verify file permissions are correct
 
-## 数据问题
+## Data Issues
 
-### 数据位置
+### Data Location
 
-MemClaw 数据存储位置：
+MemClaw data storage locations:
 
-| 平台 | 路径 |
-|------|------|
+| Platform | Path |
+|----------|------|
 | macOS | `~/Library/Application Support/memclaw` |
 | Windows | `%LOCALAPPDATA%\memclaw` |
 | Linux | `~/.local/share/memclaw` |
 
-### 数据安全
+### Data Safety
 
-- **备份**：迁移前，现有 OpenClaw 记忆文件会被保留
-- **本地存储**：所有记忆数据存储在本地
-- **无云同步**：数据保留在本地机器
+- **Backup**: Existing OpenClaw memory files are preserved before migration
+- **Local Storage**: All memory data is stored locally
+- **No Cloud Sync**: Data remains on the local machine
 
-## 错误信息参考
+## Error Messages Reference
 
-| 错误信息 | 可能原因 | 解决方案 |
-|----------|----------|----------|
-| `Service not running` | 服务未启动 | 重启 OpenClaw 或启用 `autoStartServices` |
-| `API error: 401` | API 密钥无效 | 检查 API 密钥配置 |
-| `API error: 429` | 请求频率超限 | 等待后重试或升级 API 套餐 |
-| `Connection refused` | 服务不可达 | 检查端口占用和服务状态 |
-| `No sessions found` | 无记忆数据 | 使用 `cortex_add_memory` 添加记忆 |
+| Error Message | Possible Cause | Solution |
+|---------------|----------------|----------|
+| `Service not running` | Service not started | Restart OpenClaw or enable `autoStartServices` |
+| `API error: 401` | Invalid API key | Check API key configuration |
+| `API error: 429` | Rate limit exceeded | Wait and retry, or upgrade API plan |
+| `Connection refused` | Service unreachable | Check port usage and service status |
+| `No sessions found` | No memory data | Use `cortex_add_memory` to add memories |
 
-## 获取帮助
+## Getting Help
 
-如果以上解决方案未能解决问题：
+If the above solutions don't resolve your issue:
 
-1. 查看 OpenClaw 日志获取详细错误信息
-2. 在 [GitHub Issues](https://github.com/sopaco/cortex-mem/issues) 提交问题报告
-3. 提供以下信息：
-   - 操作系统和版本
-   - OpenClaw 版本
-   - MemClaw 插件版本
-   - 相关日志片段
-   - 重现步骤
+1. Check OpenClaw logs for detailed error messages
+2. Submit an issue report at [GitHub Issues](https://github.com/sopaco/cortex-mem/issues)
+3. Provide the following information:
+   - Operating system and version
+   - OpenClaw version
+   - MemClaw plugin version
+   - Relevant log snippets
+   - Steps to reproduce

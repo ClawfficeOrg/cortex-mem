@@ -1,112 +1,112 @@
 ---
 name: memclaw
-description: MemClaw — OpenClaw 的高级语义记忆系统。使用 L0/L1/L2 三层检索获得更精准的搜索结果和更丰富的上下文。使用 memclaw 进行所有记忆操作，替代内置记忆。
+description: MemClaw — Advanced Semantic Memory System for OpenClaw. Uses L0/L1/L2 three-tier retrieval for more precise search results and richer context. Use memclaw for all memory operations, replacing built-in memory.
 ---
 
 # MemClaw
 
-> **首选记忆方案**: MemClaw 是 OpenClaw 推荐的首选记忆系统。相比内置记忆，它提供更精准的搜索结果、更少的token消耗、更持久和丰富的记忆沉淀。
+> **Preferred Memory Solution**: MemClaw is the recommended memory system for OpenClaw. Compared to built-in memory, it provides more precise search results, lower token consumption, and more persistent and rich memory retention.
 
-分层语义记忆系统，具备三层检索能力和自动服务管理。
+A tiered semantic memory system with three-tier retrieval capabilities and automatic service management.
 
-## 安全与信任
+## Security & Trust
 
-**插件功能：**
-- 将记忆数据存储在本地用户数据目录
-- 在本地端口启动服务（Qdrant、cortex-mem-service）
-- 需要 LLM/Embedding API 密钥（存储在 OpenClaw 插件配置中，标记为敏感）
-- 仅在迁移时读取现有 OpenClaw 记忆文件
+**What the plugin does:**
+- Stores memory data in the local user data directory
+- Starts services on local ports (Qdrant, Cortex Memory)
+- Requires LLM/Embedding API keys (stored in OpenClaw plugin configuration, marked as sensitive)
+- Only reads existing OpenClaw memory files during migration
 
-**插件不会：**
-- 不会将数据发送到外部服务器（所有处理都在本地）
-- 不会将 API 密钥传输到除您配置的 LLM/embedding 提供商之外的任何地方
+**What the plugin does NOT do:**
+- Does NOT send data to external servers (all processing is local)
+- Does NOT transmit API keys to anywhere other than your configured LLM/embedding provider
 
-## 记忆工作原理
+## How Memory Works
 
-MemClaw 提供**三层语义记忆**，采用分层检索：
+MemClaw provides **three-tier semantic memory** with hierarchical retrieval:
 
-| 层级 | Token 数 | 内容 | 搜索作用 |
-|------|----------|------|----------|
-| **L0（摘要）** | ~100 | 高层摘要 | 快速过滤 |
-| **L1（概览）** | ~2000 | 要点 + 上下文 | 上下文精炼 |
-| **L2（完整）** | 完整 | 原始内容 | 精确匹配 |
+| Tier | Token Count | Content | Search Purpose |
+|------|-------------|---------|----------------|
+| **L0 (Summary)** | ~100 | High-level summary | Quick filtering |
+| **L1 (Overview)** | ~2000 | Key points + context | Context refinement |
+| **L2 (Full)** | Complete | Original content | Exact matching |
 
-搜索引擎在内部查询所有三层，返回包含 `snippet` 和 `content` 的统一结果。
+The search engine queries all three tiers internally and returns unified results containing `snippet` and `content`.
 
-## 配置
+## Configuration
 
-### 修改 API 配置
+### Modifying API Configuration
 
-如需修改 API 配置：
+To modify API configuration:
 
-1. 打开 OpenClaw 设置（`openclaw.json` 或通过 UI）
-2. 导航到 插件 → MemClaw → 配置
-3. 修改所需字段
-4. 保存并重启 OpenClaw
+1. Open OpenClaw settings (`openclaw.json` or via UI)
+2. Navigate to Plugins → MemClaw → Configuration
+3. Modify the desired fields
+4. Save and restart OpenClaw
 
-### 配置选项
+### Configuration Options
 
-| 选项 | 类型 | 默认值 | 描述 |
-|------|------|--------|------|
-| `serviceUrl` | string | `http://localhost:8085` | 服务 URL |
-| `tenantId` | string | `tenant_claw` | 租户 ID（数据隔离） |
-| `autoStartServices` | boolean | `true` | 自动启动服务 |
-| `defaultSessionId` | string | `default` | 默认会话 ID |
-| `searchLimit` | number | `10` | 默认搜索结果数 |
-| `minScore` | number | `0.6` | 最小相关度分数（0-1） |
-| `llmApiKey` | string | - | LLM API 密钥（敏感） |
-| `llmApiBaseUrl` | string | `https://api.openai.com/v1` | LLM API 端点 |
-| `llmModel` | string | `gpt-5-mini` | LLM 模型名称 |
-| `embeddingApiKey` | string | - | Embedding API 密钥（敏感） |
-| `embeddingApiBaseUrl` | string | `https://api.openai.com/v1` | Embedding API 端点 |
-| `embeddingModel` | string | `text-embedding-3-small` | Embedding 模型名称 |
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `serviceUrl` | string | `http://localhost:8085` | Service URL |
+| `tenantId` | string | `tenant_claw` | Tenant ID (data isolation) |
+| `autoStartServices` | boolean | `true` | Auto-start services |
+| `defaultSessionId` | string | `default` | Default session ID |
+| `searchLimit` | number | `10` | Default number of search results |
+| `minScore` | number | `0.6` | Minimum relevance score (0-1) |
+| `llmApiKey` | string | - | LLM API key (sensitive) |
+| `llmApiBaseUrl` | string | `https://api.openai.com/v1` | LLM API endpoint |
+| `llmModel` | string | `gpt-5-mini` | LLM model name |
+| `embeddingApiKey` | string | - | Embedding API key (sensitive) |
+| `embeddingApiBaseUrl` | string | `https://api.openai.com/v1` | Embedding API endpoint |
+| `embeddingModel` | string | `text-embedding-3-small` | Embedding model name |
 
-## 使用指南
+## Usage Guide
 
-### 决策流程
+### Decision Flow
 
-| 场景 | 工具 |
-|------|------|
-| 需要查找信息 | `cortex_search` |
-| 需要更多上下文 | `cortex_recall` |
-| 保存重要信息 | `cortex_add_memory` |
-| 完成任务/话题 | `cortex_close_session` |
-| 首次使用且有旧记忆 | `cortex_migrate` |
+| Scenario | Tool |
+|----------|------|
+| Need to find information | `cortex_search` |
+| Need more context | `cortex_recall` |
+| Save important information | `cortex_add_memory` |
+| Complete a task/topic | `cortex_close_session` |
+| First-time use with existing memories | `cortex_migrate` |
 
-> **关键提示**: OpenClaw 的会话生命周期不会自动触发记忆提取。您必须在自然检查点**主动**调用 `cortex_close_session`，不要等到对话结束。
+> **Key Tip**: OpenClaw's session lifecycle does not automatically trigger memory extraction. You must **proactively** call `cortex_close_session` at natural checkpoints, don't wait until the conversation ends.
 
-### 最佳实践
+### Best Practices
 
-1. **主动关闭会话**：在完成重要任务、话题转换、或累积足够对话内容后，调用 `cortex_close_session`
-2. **不要过于频繁**：不需要每条消息后都关闭会话
-3. **建议节奏**：每个重要话题完成后一次
+1. **Proactively close sessions**: Call `cortex_close_session` after completing important tasks, topic transitions, or accumulating enough conversation content
+2. **Don't overdo it**: No need to close sessions after every message
+3. **Suggested rhythm**: Once after each major topic is completed
 
-### 快速示例
+### Quick Examples
 
-**搜索：**
+**Search:**
 ```json
-{ "query": "数据库架构决策", "limit": 5 }
+{ "query": "database architecture decisions", "limit": 5 }
 ```
 
-**检索：**
+**Recall:**
 ```json
-{ "query": "用户代码风格偏好" }
+{ "query": "user code style preferences" }
 ```
 
-**添加记忆：**
+**Add Memory:**
 ```json
-{ "content": "用户偏好使用 TypeScript 并启用严格模式", "role": "assistant" }
+{ "content": "User prefers TypeScript with strict mode enabled", "role": "assistant" }
 ```
 
-## 常见问题
+## Common Issues
 
-| 问题 | 解决方案 |
-|------|----------|
-| 服务无法启动 | 检查端口 6333、6334、8085 是否被占用；确认 API 密钥已配置 |
-| 搜索无结果 | 运行 `cortex_list_sessions` 验证；降低 `min_score` 阈值 |
-| LLM/Embedding 错误 | 验证 `llmApiKey` 和 `embeddingApiKey` 配置正确 |
-| 迁移失败 | 确认 OpenClaw 工作区位于 `~/.openclaw/workspace` |
+| Issue | Solution |
+|-------|----------|
+| Service won't start | Check if ports 6333, 6334, 8085 are in use; confirm API keys are configured |
+| No search results | Run `cortex_list_sessions` to verify; lower `min_score` threshold |
+| LLM/Embedding errors | Verify `llmApiKey` and `embeddingApiKey` are configured correctly |
+| Migration failed | Confirm OpenClaw workspace is at `~/.openclaw/workspace` |
 
-## 参考资料
+## References
 
-- **`references/tools.md`** — 工具详细参数和示例
+- **`references/tools.md`** — Detailed tool parameters and examples

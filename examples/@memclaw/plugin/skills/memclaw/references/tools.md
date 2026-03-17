@@ -1,200 +1,200 @@
-# 工具参考
+# Tools Reference
 
-MemClaw 工具的详细文档。
+Detailed documentation for MemClaw tools.
 
 ## cortex_search
 
-使用 L0/L1/L2 分层检索进行语义搜索。
+Semantic search using L0/L1/L2 hierarchical retrieval.
 
-**参数：**
+**Parameters:**
 
-| 参数 | 类型 | 必需 | 默认值 | 描述 |
-|------|------|------|--------|------|
-| `query` | string | 是 | - | 搜索查询 — 自然语言或关键词 |
-| `scope` | string | 否 | - | 限制搜索范围的会话/线程 ID |
-| `limit` | integer | 否 | 10 | 最大结果数 |
-| `min_score` | number | 否 | 0.6 | 最小相关度分数（0-1） |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | string | Yes | - | Search query — natural language or keywords |
+| `scope` | string | No | - | Session/thread ID to limit search scope |
+| `limit` | integer | No | 10 | Maximum number of results |
+| `min_score` | number | No | 0.6 | Minimum relevance score (0-1) |
 
-**使用场景：**
-- 查找过去的对话或决策
-- 在所有会话中搜索特定信息
-- 通过语义相似性发现相关记忆
+**Use Cases:**
+- Find past conversations or decisions
+- Search for specific information across all sessions
+- Discover related memories through semantic similarity
 
-**示例：**
+**Example:**
 ```json
 {
-  "query": "数据库架构决策",
+  "query": "database architecture decisions",
   "limit": 5,
   "min_score": 0.6
 }
 ```
 
-**响应格式：**
-- 返回按相关度排序的结果
-- 每个结果包含 `uri`、`score` 和 `snippet`
+**Response Format:**
+- Returns results sorted by relevance
+- Each result contains `uri`, `score`, and `snippet`
 
 ---
 
 ## cortex_recall
 
-检索包含更多上下文的记忆（摘要 + 完整内容）。
+Retrieve memories with more context (summary + full content).
 
-**参数：**
+**Parameters:**
 
-| 参数 | 类型 | 必需 | 默认值 | 描述 |
-|------|------|------|--------|------|
-| `query` | string | 是 | - | 搜索查询 |
-| `scope` | string | 否 | - | 限制搜索范围的会话/线程 ID |
-| `limit` | integer | 否 | 10 | 最大结果数 |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | string | Yes | - | Search query |
+| `scope` | string | No | - | Session/thread ID to limit search scope |
+| `limit` | integer | No | 10 | Maximum number of results |
 
-**使用场景：**
-- 需要包含完整上下文的记忆，而不仅是摘要
-- 想查看原始内容
-- 进行详细的记忆分析
+**Use Cases:**
+- Need memories with full context, not just summaries
+- Want to see original content
+- Performing detailed memory analysis
 
-**示例：**
+**Example:**
 ```json
 {
-  "query": "用户代码风格偏好",
+  "query": "user code style preferences",
   "limit": 10
 }
 ```
 
-**响应格式：**
-- 返回包含 `snippet`（摘要）和 `content`（全文）的结果
-- 内容过长时会截断（预览 >300 字符）
+**Response Format:**
+- Returns results with `snippet` (summary) and `content` (full text)
+- Content is truncated when too long (preview >300 characters)
 
 ---
 
 ## cortex_add_memory
 
-存储消息以便后续检索。
+Store messages for later retrieval.
 
-**参数：**
+**Parameters:**
 
-| 参数 | 类型 | 必需 | 默认值 | 描述 |
-|------|------|------|--------|------|
-| `content` | string | 是 | - | 要存储的记忆内容 |
-| `role` | string | 否 | `user` | 消息发送者角色：`user`、`assistant` 或 `system` |
-| `session_id` | string | 否 | `default` | 记忆所属的会话/线程 ID |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `content` | string | Yes | - | Memory content to store |
+| `role` | string | No | `user` | Message sender role: `user`, `assistant`, or `system` |
+| `session_id` | string | No | `default` | Session/thread ID the memory belongs to |
 
-**使用场景：**
-- 持久化重要信息以便后续检索
-- 存储用户偏好或决策
-- 保存应该可搜索的上下文
+**Use Cases:**
+- Persist important information for later retrieval
+- Store user preferences or decisions
+- Save context that should be searchable
 
-**示例：**
+**Example:**
 ```json
 {
-  "content": "用户偏好使用 TypeScript 并启用严格模式",
+  "content": "User prefers TypeScript with strict mode enabled",
   "role": "assistant",
   "session_id": "default"
 }
 ```
 
-**执行效果：**
-- 消息带时间戳存储
-- 自动生成向量嵌入
-- 异步生成 L0/L1 层
+**Execution Effects:**
+- Message is stored with timestamp
+- Vector embedding is automatically generated
+- L0/L1 layers are generated asynchronously
 
 ---
 
 ## cortex_list_sessions
 
-列出所有记忆会话及其状态。
+List all memory sessions and their status.
 
-**参数：** 无
+**Parameters:** None
 
-**使用场景：**
-- 搜索前验证会话是否存在
-- 检查哪些会话是活跃或已关闭
-- 审计记忆使用情况
+**Use Cases:**
+- Verify sessions exist before searching
+- Check which sessions are active or closed
+- Audit memory usage
 
-**响应格式：**
-- 会话 ID、状态、消息数量
-- 创建和更新时间戳
+**Response Format:**
+- Session ID, status, message count
+- Creation and update timestamps
 
 ---
 
 ## cortex_close_session
 
-关闭会话并触发记忆提取流程。
+Close a session and trigger the memory extraction process.
 
-**参数：**
+**Parameters:**
 
-| 参数 | 类型 | 必需 | 默认值 | 描述 |
-|------|------|------|--------|------|
-| `session_id` | string | 否 | `default` | 要关闭的会话/线程 ID |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `session_id` | string | No | `default` | Session/thread ID to close |
 
-**使用场景：**
-- 对话完成时
-- 准备提取结构化记忆
-- 想要确定会话的记忆内容
+**Use Cases:**
+- When a conversation is complete
+- Preparing to extract structured memories
+- Wanting to finalize a session's memory content
 
-**执行效果：**
-1. 提取结构化记忆（用户偏好、实体、决策）
-2. 生成完整的 L0/L1 层摘要
-3. 将所有提取的记忆索引到向量数据库
+**Execution Effects:**
+1. Extracts structured memories (user preferences, entities, decisions)
+2. Generates complete L0/L1 layer summaries
+3. Indexes all extracted memories into the vector database
 
-**注意：** 这是一个可能较长的操作（30-60 秒）。
+**Note:** This can be a longer operation (30-60 seconds).
 
-**示例：**
+**Example:**
 ```json
 {
   "session_id": "default"
 }
 ```
 
-> **重要**：应在自然检查点主动调用此工具，而非仅在对话结束时。理想的调用时机：完成重要任务、话题转换、累积了足够的对话内容后。
+> **Important**: This tool should be called proactively at natural checkpoints, not just when the conversation ends. Ideal timing: after completing important tasks, topic transitions, or accumulating enough conversation content.
 
 ---
 
 ## cortex_migrate
 
-从 OpenClaw 原生记忆系统迁移到 MemClaw。
+Migrate from OpenClaw's native memory system to MemClaw.
 
-**参数：** 无
+**Parameters:** None
 
-**使用场景：**
-- 首次使用时已有 OpenClaw 记忆
-- 想保留之前的对话历史
-- 从内置记忆切换到 MemClaw
+**Use Cases:**
+- First-time use with existing OpenClaw memories
+- Want to preserve previous conversation history
+- Switching from built-in memory to MemClaw
 
-**执行效果：**
-1. 查找 OpenClaw 记忆文件（`memory/*.md` 和 `MEMORY.md`）
-2. 转换为 MemClaw 的 L2 格式
-3. 生成 L0/L1 层和向量索引
+**Execution Effects:**
+1. Finds OpenClaw memory files (`memory/*.md` and `MEMORY.md`)
+2. Converts to MemClaw's L2 format
+3. Generates L0/L1 layers and vector indices
 
-**前提条件：**
-- OpenClaw 工作区存在于 `~/.openclaw/workspace`
-- 记忆文件存在于 `~/.openclaw/workspace/memory/`
+**Prerequisites:**
+- OpenClaw workspace exists at `~/.openclaw/workspace`
+- Memory files exist at `~/.openclaw/workspace/memory/`
 
-**仅在初始设置时运行一次。**
+**Run only once during initial setup.**
 
 ---
 
 ## cortex_maintenance
 
-对 MemClaw 数据执行定期维护。
+Perform periodic maintenance on MemClaw data.
 
-**参数：**
+**Parameters:**
 
-| 参数 | 类型 | 必需 | 默认值 | 描述 |
-|------|------|------|--------|------|
-| `dryRun` | boolean | 否 | false | 预览变更而不执行 |
-| `commands` | array | 否 | `["prune", "reindex", "ensure-all"]` | 要执行的维护命令 |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `dryRun` | boolean | No | false | Preview changes without executing |
+| `commands` | array | No | `["prune", "reindex", "ensure-all"]` | Maintenance commands to execute |
 
-**使用场景：**
-- 搜索结果不完整或过时
-- 从崩溃或数据损坏中恢复
-- 需要清理磁盘空间
+**Use Cases:**
+- Search results are incomplete or outdated
+- Recovering from crash or data corruption
+- Need to clean up disk space
 
-**可用命令：**
-- `prune` — 移除源文件已不存在的向量
-- `reindex` — 重建向量索引并移除过期条目
-- `ensure-all` — 生成缺失的 L0/L1 层文件
+**Available Commands:**
+- `prune` — Remove vectors whose source files no longer exist
+- `reindex` — Rebuild vector indices and remove stale entries
+- `ensure-all` — Generate missing L0/L1 layer files
 
-**示例：**
+**Example:**
 ```json
 {
   "dryRun": false,
@@ -202,4 +202,4 @@ MemClaw 工具的详细文档。
 }
 ```
 
-> **注意**：此工具通常由定时 Cron 任务自动调用。手动调用用于排查问题或按需维护。
+> **Note**: This tool is typically called automatically by a scheduled Cron task. Manual invocation is for troubleshooting or on-demand maintenance.
