@@ -44,6 +44,8 @@ fn default_enable_intent_analysis() -> bool {
 
 impl CortexConfig {
     /// Get the effective data directory
+    /// Returns the configured data_dir, or falls back to default behavior.
+    /// Note: Callers should handle the None case appropriately based on their context.
     pub fn data_dir(&self) -> String {
         self.data_dir.clone().unwrap_or_else(|| {
             Self::default_data_dir()
@@ -51,22 +53,13 @@ impl CortexConfig {
     }
     
     /// Get the default data directory
+    /// Priority:
+    /// 1. Environment variable CORTEX_DATA_DIR
+    /// 2. Current directory "."
     fn default_data_dir() -> String {
-        // 优先级：
-        // 1. 环境变量 CORTEX_DATA_DIR
-        // 2. 应用数据目录/cortex (TARS 应用)
-        // 3. 当前目录 ./.cortex
         std::env::var("CORTEX_DATA_DIR")
             .ok()
-            .or_else(|| {
-                // 尝试使用应用数据目录（TARS 默认路径）
-                directories::ProjectDirs::from("com", "cortex-mem", "tars")
-                    .map(|dirs| {
-                        let cortex_dir = dirs.data_dir().join("cortex");
-                        cortex_dir.to_string_lossy().to_string()
-                    })
-            })
-            .unwrap_or_else(|| "./.cortex".to_string())
+            .unwrap_or_else(|| ".".to_string())
     }
 }
 

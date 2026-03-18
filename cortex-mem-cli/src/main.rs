@@ -205,7 +205,26 @@ async fn main() -> Result<()> {
     })?;
 
     // Determine data directory
-    let data_dir = config.cortex.data_dir();
+    // Priority:
+    // 1. data_dir specified in config file (supports relative path to config file location)
+    // 2. CORTEX_DATA_DIR environment variable
+    // 3. Directory containing config.toml (the workspace root)
+    let config_dir = cli.config.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    
+    let data_dir = if let Some(ref dir) = config.cortex.data_dir {
+        // If data_dir is a relative path, resolve it relative to config file location
+        let dir_path = std::path::Path::new(dir);
+        if dir_path.is_relative() {
+            config_dir.join(dir_path).to_string_lossy().to_string()
+        } else {
+            dir.clone()
+        }
+    } else if let Ok(env_dir) = std::env::var("CORTEX_DATA_DIR") {
+        env_dir
+    } else {
+        // Use the directory containing config.toml as the workspace root
+        config_dir.to_string_lossy().to_string()
+    };
 
     // Handle tenant list command early (doesn't need MemoryOperations)
     if let Commands::Tenant { action } = cli.command {

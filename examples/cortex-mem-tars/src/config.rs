@@ -58,6 +58,10 @@ impl ConfigManager {
         log::info!("机器人配置文件: {:?}", bots_file);
         log::info!("Cortex 配置文件: {:?}", cortex_config_file);
 
+        // TARS 数据目录：直接使用应用数据目录（与框架底层保持统一）
+        // 框架会自动在此目录下创建 tenants/{tenant_id}/ 结构
+        let tars_data_dir_str = config_dir.to_string_lossy().to_string();
+
         // 加载或创建 cortex-mem 配置
         let cortex_config = if cortex_config_file.exists() {
             let config =
@@ -91,7 +95,10 @@ impl ConfigManager {
                     cors_origins: vec!["*".to_string()],
                 },
                 logging: cortex_mem_config::LoggingConfig::default(),
-                cortex: cortex_mem_config::CortexConfig::default(),
+                cortex: cortex_mem_config::CortexConfig {
+                    data_dir: Some(tars_data_dir_str.clone()),
+                    enable_intent_analysis: true,
+                },
             };
             let content = toml::to_string_pretty(&default_config).context("无法序列化默认配置")?;
             fs::write(&cortex_config_file, content).context("无法写入默认配置文件")?;
