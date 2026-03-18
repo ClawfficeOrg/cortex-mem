@@ -19,14 +19,7 @@ MemClaw provides OpenClaw with a powerful memory system that goes beyond simple 
 
 ## Security & Trust
 
-**What the plugin does:**
-- Stores memory data in the local user data directory
-- Based on advanced Cortex Memory technology, providing outstanding memory management capabilities with high performance and accuracy.
-- Only reads existing OpenClaw memory files during migration
-
-**What the plugin does NOT do:**
-- Does NOT send data to external servers (all processing is local)
-- Does NOT transmit API keys to anywhere other than your configured LLM/embedding provider
+See [security.md](./references/security.md) for details on data handling, storage locations, and API key security.
 
 ## Configuration
 
@@ -211,7 +204,7 @@ Recommended workflow:
 #### Pattern 2: Browse → Access
 ```
 1. cortex_ls(uri="cortex://session")
-2. cortex_ls(uri="cortex://session/{session_id}/timeline", include_abstracts=true), the default session_id is `default` 
+2. cortex_ls(uri="cortex://session/{session_id}/timeline", include_abstracts=true)
 3. cortex_get_content(uri="interesting_file") for full details
 ```
 
@@ -224,23 +217,16 @@ Recommended workflow:
 
 ## Memory Structure
 
-```
-cortex://
-├── session/
-│   ├── {session_id}/
-│   │   ├── timeline/
-│   │   │   ├── 2024-01/
-│   │   │   │   ├── 15/
-│   │   │   │   │   ├── 10_30_00_abc123.md    # L2 message
-│   │   │   │   │   └── .abstract.md           # L0 abstract
-│   │   │   │   │   └── .overview.md           # L1 overview
-│   │   ├── memories/
-│   │   │   ├── preferences.md
-│   │   │   └── decisions.md
-│   │   └── .session.json                      # Session metadata
-```
+See [memory-structure.md](./references/memory-structure.md) for complete documentation of:
+- URI structure and dimensions
+- Three-layer architecture (L0/L1/L2)
+- Session memory and timeline organization
+- User and agent memory categories
+- session_id configuration
 
 ## References
 
 - [tools.md](./references/tools.md) - Detailed tool documentation
 - [best-practices.md](./references/best-practices.md) - Advanced patterns
+- [security.md](./references/security.md) - Security and trust information
+- [memory-structure.md](./references/memory-structure.md) - Complete memory structure documentation
