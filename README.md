@@ -287,17 +287,14 @@ The dashboard will be available at `http://localhost:5173` and will proxy API re
 |------------------------|---------|
 | Basic memory storage | **Three-tier L0/L1/L2 architecture** for intelligent retrieval |
 | Higher token consumption | **80%+ token savings** with layered context loading |
-| Cloud-dependent | **100% local storage** — your memories stay on your machine |
-| Limited search precision | **Semantic vector search** with weighted scoring across layers |
-| Manual configuration | **Auto service management** — Qdrant & cortex-mem-service handled automatically |
+| Limited search precision | **Vector search + Agentic VFS exploration** for complex scenarios |
 
 ## Key Features
 
-- **🎯 Three-Layer Memory Architecture**: L0 (abstract → ~100 tokens), L1 (overview → ~2000 tokens), L2 (full content) for optimal context loading
-- **🔒 Complete Data Privacy**: All memories stored locally on your machine with no cloud dependency
+- **🎯 Low Token & Hardware Resource Usage**: Rust-powered high-performance memory components with progressive retrieval for optimal context loading
+- **🔒 Complete Data Privacy**: All memories stored locally with zero cloud dependency
 - **🚀 One-Click Migration**: Seamlessly migrate from OpenClaw native memory to MemClaw
-- **⚙️ Easy Configuration**: Configure LLM and Embedding settings directly through OpenClaw plugin UI
-- **🤖 Automatic Service Management**: Auto-starts Qdrant vector database and cortex-mem-service
+- **⚙️ Easy Configuration**: Zero runtime dependencies, one-line installation, minimal config to get started
 
 ## Available Tools
 
