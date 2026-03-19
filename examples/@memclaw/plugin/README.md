@@ -16,7 +16,7 @@ MemClaw is an OpenClaw plugin that provides advanced semantic memory capabilitie
 - **Session Management**: Create, list, and close memory sessions
 - **Migration Support**: One-click migration from OpenClaw native memory
 - **Easy Configuration**: Configure LLM/Embedding directly through OpenClaw plugin settings
-- **Cross-Platform**: Supports Windows x64 and macOS Apple Silicon
+- **Cross-Platform**: Supports Windows x64, macOS Apple Silicon, and Linux x64
 
 ## Architecture
 
@@ -60,7 +60,7 @@ OpenClaw + MemClaw Plugin
 
 | Requirement | Details |
 |-------------|---------|
-| **Platforms** | Windows x64, macOS Apple Silicon |
+| **Platforms** | Windows x64, macOS Apple Silicon, Linux x64 |
 | **Node.js** | ≥ 20.0.0 |
 | **OpenClaw** | Installed and configured |
 
