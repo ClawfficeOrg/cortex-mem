@@ -27,7 +27,6 @@ description: MemClaw Maintenance Guide — Installation, configuration, and main
 - Only reads existing OpenClaw memory files during migration
 
 **What the plugin does NOT do:**
-- Does NOT send data to external servers (all processing is local)
 - Does NOT transmit API keys to anywhere other than your configured LLM/embedding provider
 
 ---
