@@ -77,10 +77,10 @@ cortex_add_memory(
 )
 ```
 
-#### cortex_close_session
-Trigger extraction pipeline. Call at task completion or topic shifts (NOT just at end).
+#### cortex_commit_session
+Commit session and trigger extraction pipeline. Call at task completion or topic shifts (NOT just at end).
 ```
-cortex_close_session(session_id="default")
+cortex_commit_session(session_id="default")
 ```
 
 ### Migration & Maintenance

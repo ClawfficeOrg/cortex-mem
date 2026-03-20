@@ -5,6 +5,7 @@
  * Binaries are bundled in platform-specific npm packages:
  * - @memclaw/bin-darwin-arm64 (macOS Apple Silicon)
  * - @memclaw/bin-win-x64 (Windows x64)
+ * - @memclaw/bin-linux-x64 (Linux x64)
  *
  * The correct package is installed automatically via optionalDependencies.
  */
@@ -70,6 +71,9 @@ function getPlatform() {
     else if (platform === 'win32' && arch === 'x64') {
         return 'win-x64';
     }
+    else if (platform === 'linux' && arch === 'x64') {
+        return 'linux-x64';
+    }
     return null;
 }
 // Check if current platform is supported
@@ -84,6 +88,7 @@ function getUnsupportedPlatformMessage() {
 MemClaw is only supported on:
   - macOS Apple Silicon (darwin-arm64)
   - Windows x64 (win-x64)
+  - Linux x64 (linux-x64)
 
 Current platform: ${platform}-${arch} is not supported.
 `;

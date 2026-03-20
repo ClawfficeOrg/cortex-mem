@@ -69,7 +69,7 @@ Open OpenClaw settings and verify MemClaw plugin configuration:
 
 ### Memory Extraction Failed
 
-**Symptoms**: `cortex_close_session` fails or produces incomplete results
+**Symptoms**: `cortex_commit_session` fails or produces incomplete results
 
 **Solutions**:
 1. Verify LLM API configuration is correct

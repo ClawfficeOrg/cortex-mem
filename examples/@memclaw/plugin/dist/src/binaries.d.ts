@@ -4,10 +4,11 @@
  * Binaries are bundled in platform-specific npm packages:
  * - @memclaw/bin-darwin-arm64 (macOS Apple Silicon)
  * - @memclaw/bin-win-x64 (Windows x64)
+ * - @memclaw/bin-linux-x64 (Linux x64)
  *
  * The correct package is installed automatically via optionalDependencies.
  */
-type SupportedPlatform = 'darwin-arm64' | 'win-x64';
+type SupportedPlatform = 'darwin-arm64' | 'win-x64' | 'linux-x64';
 export declare function getPlatform(): SupportedPlatform | null;
 export declare function isPlatformSupported(): boolean;
 export declare function getUnsupportedPlatformMessage(): string;

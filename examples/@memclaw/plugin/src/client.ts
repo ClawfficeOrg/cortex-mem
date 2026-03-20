@@ -293,9 +293,9 @@ export class CortexMemClient {
 	}
 
 	/**
-	 * Close a session and trigger memory extraction
+	 * Commit a session and trigger memory extraction
 	 */
-	async closeSession(threadId: string): Promise<{
+	async commitSession(threadId: string): Promise<{
 		thread_id: string;
 		status: string;
 		message_count: number;
@@ -314,7 +314,7 @@ export class CortexMemClient {
 		});
 
 		if (!response.success || !response.data) {
-			throw new Error(response.error ?? 'Close session failed');
+			throw new Error(response.error ?? 'Commit session failed');
 		}
 
 		return response.data;

@@ -115,9 +115,9 @@ export declare class CortexMemClient {
      */
     addMessage(threadId: string, message: AddMessageOptions): Promise<string>;
     /**
-     * Close a session and trigger memory extraction
+     * Commit a session and trigger memory extraction
      */
-    closeSession(threadId: string): Promise<{
+    commitSession(threadId: string): Promise<{
         thread_id: string;
         status: string;
         message_count: number;

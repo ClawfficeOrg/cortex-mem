@@ -131,13 +131,13 @@ Use this to persist important information that should be searchable later.`,
             required: ['content']
         }
     },
-    cortex_close_session: {
-        name: 'cortex_close_session',
-        description: `Trigger memory extraction and archival for accumulated conversation content.
+    cortex_commit_session: {
+        name: 'cortex_commit_session',
+        description: `Commit accumulated conversation content and trigger memory extraction.
 
 **IMPORTANT - Call this tool proactively and periodically, NOT just at conversation end.**
 
-This triggers the complete memory processing pipeline:
+This commits the session and triggers the complete memory processing pipeline:
 1. Extracts structured memories (user preferences, entities, decisions)
 2. Generates complete L0/L1 layer summaries
 3. Indexes all extracted memories into the vector database
@@ -161,7 +161,7 @@ This triggers the complete memory processing pipeline:
             properties: {
                 session_id: {
                     type: 'string',
-                    description: 'Session/thread ID to process (uses default if not specified)'
+                    description: 'Session/thread ID to commit (uses default if not specified)'
                 }
             }
         }
@@ -623,19 +623,19 @@ function createPlugin(api) {
             }
         }
     });
-    // cortex_close_session
+    // cortex_commit_session
     api.registerTool({
-        name: toolSchemas.cortex_close_session.name,
-        description: toolSchemas.cortex_close_session.description,
-        parameters: toolSchemas.cortex_close_session.inputSchema,
+        name: toolSchemas.cortex_commit_session.name,
+        description: toolSchemas.cortex_commit_session.description,
+        parameters: toolSchemas.cortex_commit_session.inputSchema,
         execute: async (_id, params) => {
             const input = params;
             try {
                 await ensureServicesReady();
                 const sessionId = input.session_id ?? defaultSessionId;
-                const result = await client.closeSession(sessionId);
+                const result = await client.commitSession(sessionId);
                 return {
-                    content: `Session "${sessionId}" closed successfully.\nStatus: ${result.status}, Messages: ${result.message_count}\n\nMemory extraction pipeline triggered.`,
+                    content: `Session "${sessionId}" committed successfully.\nStatus: ${result.status}, Messages: ${result.message_count}\n\nMemory extraction pipeline triggered.`,
                     success: true,
                     session: {
                         thread_id: result.thread_id,
@@ -646,8 +646,8 @@ function createPlugin(api) {
             }
             catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
-                api.logger.error(`[memclaw] cortex_close_session failed: ${message}`);
-                return { error: `Failed to close session: ${message}` };
+                api.logger.error(`[memclaw] cortex_commit_session failed: ${message}`);
+                return { error: `Failed to commit session: ${message}` };
             }
         }
     });

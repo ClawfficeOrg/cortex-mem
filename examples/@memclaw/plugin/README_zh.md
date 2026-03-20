@@ -38,7 +38,7 @@ OpenClaw + MemClaw Plugin
          ├── cortex_search        → 分层语义搜索
          ├── cortex_recall        → 召回上下文
          ├── cortex_add_memory    → 存储记忆
-         ├── cortex_close_session → 关闭并提取
+         ├── cortex_commit_session → 提交并提取
          ├── cortex_migrate       → 迁移现有记忆
          ├── cortex_maintenance   → 定期维护
          ├── cortex_ls            → 浏览记忆文件系统
@@ -239,9 +239,9 @@ ln -sf "$(pwd)" ~/.openclaw/extensions/memclaw
 - `session_id`: 会话/线程 ID（不指定则使用默认值）
 - `metadata`: 可选元数据，如标签、重要性或自定义字段
 
-### cortex_close_session
+### cortex_commit_session
 
-关闭会话并触发记忆提取管道（耗时 30-60 秒）。
+提交会话并触发记忆提取管道（耗时 30-60 秒）。
 
 ```json
 {
@@ -377,7 +377,7 @@ ln -sf "$(pwd)" ~/.openclaw/extensions/memclaw
 | 需要完整原始内容 | `cortex_get_content` |
 | 有目的地探索 | `cortex_explore` |
 | 保存重要信息 | `cortex_add_memory` |
-| 完成任务/话题 | `cortex_close_session` |
+| 完成任务/话题 | `cortex_commit_session` |
 | 首次使用且有现有记忆 | `cortex_migrate` |
 | 数据维护 | `cortex_maintenance` |
 

@@ -38,7 +38,7 @@ OpenClaw + MemClaw Plugin
          ├── cortex_search        → Layered semantic search
          ├── cortex_recall        → Recall with context
          ├── cortex_add_memory    → Store memories
-         ├── cortex_close_session → Close & extract
+         ├── cortex_commit_session → Commit & extract
          ├── cortex_migrate       → Migrate existing memory
          ├── cortex_maintenance   → Periodic maintenance
          ├── cortex_ls            → Browse memory filesystem
@@ -241,9 +241,9 @@ Store a message for future retrieval with optional metadata.
 
 
 
-### cortex_close_session
+### cortex_commit_session
 
-Close a session and trigger memory extraction pipeline (takes 30-60 seconds).
+Commit a session and trigger memory extraction pipeline (takes 30-60 seconds).
 
 ```json
 {
@@ -379,7 +379,7 @@ This tool runs automatically every 3 hours. Call manually when search results se
 | Need exact full content | `cortex_get_content` |
 | Explore with purpose | `cortex_explore` |
 | Save important information | `cortex_add_memory` |
-| Complete a task/topic | `cortex_close_session` |
+| Complete a task/topic | `cortex_commit_session` |
 | First-time use with existing memories | `cortex_migrate` |
 | Data maintenance | `cortex_maintenance` |
 

@@ -151,9 +151,9 @@ Each session has a `.session.json` file containing:
 Layers are generated **asynchronously** to avoid blocking agent responses:
 
 1. **L2 (Detail)**: Created immediately when memory is added
-2. **L0/L1**: Generated when `cortex_close_session` is called or via background maintenance
+2. **L0/L1**: Generated when `cortex_commit_session` is called or via background maintenance
 
-**When to call `cortex_close_session`:**
+**When to call `cortex_commit_session`:**
 - After completing a significant task
 - After user shares important preferences
 - When conversation topic shifts

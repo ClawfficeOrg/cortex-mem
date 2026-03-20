@@ -142,15 +142,15 @@ class CortexMemClient {
         return response.data;
     }
     /**
-     * Close a session and trigger memory extraction
+     * Commit a session and trigger memory extraction
      */
-    async closeSession(threadId) {
+    async commitSession(threadId) {
         const response = await this.fetchJson(`/api/v2/sessions/${threadId}/close`, {
             method: 'POST',
             body: JSON.stringify({})
         });
         if (!response.success || !response.data) {
-            throw new Error(response.error ?? 'Close session failed');
+            throw new Error(response.error ?? 'Commit session failed');
         }
         return response.data;
     }

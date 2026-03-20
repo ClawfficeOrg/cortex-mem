@@ -268,9 +268,9 @@ cortex_add_memory({
 
 ---
 
-### cortex_close_session
+### cortex_commit_session
 
-Trigger memory extraction pipeline.
+Commit session and trigger memory extraction pipeline.
 
 **Parameters:**
 
