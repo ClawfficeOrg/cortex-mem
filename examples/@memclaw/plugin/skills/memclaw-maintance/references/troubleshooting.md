@@ -38,9 +38,12 @@ Common MemClaw issues and their solutions.
 **Symptoms**: Service behavior doesn't change after modifying configuration
 
 **Solutions**:
-1. Ensure configuration file was saved
-2. Restart OpenClaw to apply changes
-3. Check configuration file syntax for errors (JSON format)
+Open OpenClaw settings and verify MemClaw plugin configuration:
+
+1. Open `openclaw.json` or navigate to Settings → Plugins → MemClaw
+2. Ensure all required fields are correctly filled, especially the configuration sections related to LLM and Embedding.
+3. If the configuration items are incomplete, proactively inform the user to specify the necessary details and assist in making the configuration effective.
+4. Save changes and **restart OpenClaw Gateway** for changes to take effect
 
 ## Service Issues
 
@@ -64,19 +67,9 @@ Common MemClaw issues and their solutions.
 
 ## Usage Issues
 
-### No Search Results
-
-**Symptoms**: `cortex_search` returns empty results
-
-**Solutions**:
-1. Run `cortex_list_sessions` to verify sessions exist
-2. Lower `min_score` threshold (e.g., from 0.6 to 0.4)
-3. Try different query terms or synonyms
-4. Confirm that `cortex_add_memory` or `cortex_close_session` has been called previously to store memories
-
 ### Memory Extraction Failed
 
-**Symptoms**: `cortex_close_session` fails or produces incomplete results
+**Symptoms**: `cortex_commit_session` fails or produces incomplete results
 
 **Solutions**:
 1. Verify LLM API configuration is correct

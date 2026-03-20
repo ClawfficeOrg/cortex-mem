@@ -4,6 +4,7 @@
  * Binaries are bundled in platform-specific npm packages:
  * - @memclaw/bin-darwin-arm64 (macOS Apple Silicon)
  * - @memclaw/bin-win-x64 (Windows x64)
+ * - @memclaw/bin-linux-x64 (Linux x64)
  *
  * The correct package is installed automatically via optionalDependencies.
  */
@@ -17,7 +18,7 @@ import { getDataDir } from './config.js';
 type BinaryName = 'qdrant' | 'cortex-mem-service' | 'cortex-mem-cli';
 
 // Supported platforms
-type SupportedPlatform = 'darwin-arm64' | 'win-x64';
+type SupportedPlatform = 'darwin-arm64' | 'win-x64' | 'linux-x64';
 
 // Platform detection
 export function getPlatform(): SupportedPlatform | null {
@@ -28,6 +29,8 @@ export function getPlatform(): SupportedPlatform | null {
 		return 'darwin-arm64';
 	} else if (platform === 'win32' && arch === 'x64') {
 		return 'win-x64';
+	} else if (platform === 'linux' && arch === 'x64') {
+		return 'linux-x64';
 	}
 
 	return null;
@@ -47,6 +50,7 @@ export function getUnsupportedPlatformMessage(): string {
 MemClaw is only supported on:
   - macOS Apple Silicon (darwin-arm64)
   - Windows x64 (win-x64)
+  - Linux x64 (linux-x64)
 
 Current platform: ${platform}-${arch} is not supported.
 `;
@@ -288,12 +292,18 @@ export async function startCortexMemService(log?: (msg: string) => void): Promis
 
 	const dataDir = getDataDir();
 
+	// Prepare log file path
+	const logsDir = path.join(dataDir, 'logs');
+	fs.mkdirSync(logsDir, { recursive: true });
+	const logFilePath = path.join(logsDir, 'memclaw-cortex-mem-service.log');
+
 	log?.(`Starting cortex-mem-service with data-dir ${dataDir}...`);
 	log?.(`Binary path: ${binaryPath}`);
+	log?.(`Log file: ${logFilePath}`);
 
 	// cortex-mem-service reads config.toml from current working directory
 	// Set cwd to dataDir so it can find the config file
-	const proc = spawn(binaryPath, ['--data-dir', dataDir], {
+	const proc = spawn(binaryPath, ['--data-dir', dataDir, '--log-file', logFilePath], {
 		stdio: ['ignore', 'pipe', 'pipe'],
 		detached: true,
 		cwd: dataDir  // Set working directory so config.toml can be found

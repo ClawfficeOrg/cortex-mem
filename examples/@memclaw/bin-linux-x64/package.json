@@ -1,15 +1,15 @@
 {
-	"name": "@memclaw/bin-darwin-arm64",
+	"name": "@memclaw/bin-linux-x64",
 	"version": "0.1.5",
-	"description": "MemClaw binaries for macOS Apple Silicon",
+	"description": "MemClaw binaries for Linux x64",
 	"publishConfig": {
 		"access": "public"
 	},
 	"os": [
-		"darwin"
+		"linux"
 	],
 	"cpu": [
-		"arm64"
+		"x64"
 	],
 	"files": [
 		"bin/"
@@ -19,6 +19,6 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/sopaco/cortex-mem.git",
-		"directory": "examples/@memclaw/bin-darwin-arm64"
+		"directory": "examples/@memclaw/bin-linux-x64"
 	}
 }

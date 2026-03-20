@@ -5,6 +5,7 @@
  * Binaries are bundled in platform-specific npm packages:
  * - @memclaw/bin-darwin-arm64 (macOS Apple Silicon)
  * - @memclaw/bin-win-x64 (Windows x64)
+ * - @memclaw/bin-linux-x64 (Linux x64)
  *
  * The correct package is installed automatically via optionalDependencies.
  */
@@ -70,6 +71,9 @@ function getPlatform() {
     else if (platform === 'win32' && arch === 'x64') {
         return 'win-x64';
     }
+    else if (platform === 'linux' && arch === 'x64') {
+        return 'linux-x64';
+    }
     return null;
 }
 // Check if current platform is supported
@@ -84,6 +88,7 @@ function getUnsupportedPlatformMessage() {
 MemClaw is only supported on:
   - macOS Apple Silicon (darwin-arm64)
   - Windows x64 (win-x64)
+  - Linux x64 (linux-x64)
 
 Current platform: ${platform}-${arch} is not supported.
 `;
@@ -281,11 +286,16 @@ async function startCortexMemService(log) {
         log?.(`Warning: Could not set execute permission on binary: ${err}`);
     }
     const dataDir = (0, config_js_1.getDataDir)();
+    // Prepare log file path
+    const logsDir = path.join(dataDir, 'logs');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const logFilePath = path.join(logsDir, 'memclaw-cortex-mem-service.log');
     log?.(`Starting cortex-mem-service with data-dir ${dataDir}...`);
     log?.(`Binary path: ${binaryPath}`);
+    log?.(`Log file: ${logFilePath}`);
     // cortex-mem-service reads config.toml from current working directory
     // Set cwd to dataDir so it can find the config file
-    const proc = (0, child_process_1.spawn)(binaryPath, ['--data-dir', dataDir], {
+    const proc = (0, child_process_1.spawn)(binaryPath, ['--data-dir', dataDir, '--log-file', logFilePath], {
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
         cwd: dataDir // Set working directory so config.toml can be found
