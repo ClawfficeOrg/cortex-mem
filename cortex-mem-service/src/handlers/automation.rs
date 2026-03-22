@@ -35,7 +35,8 @@ pub async fn trigger_extraction(
 
     // Close the session — this sends a SessionClosed event to MemoryEventCoordinator which
     // handles memory extraction, L0/L1 generation and vector sync asynchronously.
-    let mut session_mgr = state.session_manager.write().await;
+    let session_mgr = state.current_session_manager().await;
+    let mut session_mgr = session_mgr.write().await;
     session_mgr.close_session(&thread_id).await?;
 
     let response = serde_json::json!({
