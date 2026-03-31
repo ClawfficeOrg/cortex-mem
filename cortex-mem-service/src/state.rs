@@ -366,7 +366,13 @@ impl AppState {
             )
             .await?,
         );
-        Self::bootstrap_vectors_if_collection_empty(&new_cortex).await?;
+        // Run bootstrap vector sync in background to avoid blocking tenant switch
+        let cortex_for_bg = new_cortex.clone();
+        tokio::spawn(async move {
+            if let Err(e) = Self::bootstrap_vectors_if_collection_empty(&cortex_for_bg).await {
+                tracing::warn!("Background bootstrap vector sync failed: {}", e);
+            }
+        });
         let new_session_manager = new_cortex.session_manager();
         let new_vector_store = new_cortex.vector_store();
         let new_memory_event_tx = new_cortex.memory_event_tx();
