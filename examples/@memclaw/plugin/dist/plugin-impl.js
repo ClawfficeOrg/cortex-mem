@@ -16,6 +16,7 @@ const client_js_1 = require("./src/client.js");
 const config_js_1 = require("./src/config.js");
 const binaries_js_1 = require("./src/binaries.js");
 const migrate_js_1 = require("./src/migrate.js");
+const agents_md_injector_js_1 = require("./src/agents-md-injector.js");
 // Tool schemas
 const toolSchemas = {
     cortex_search: {
@@ -378,6 +379,7 @@ function createPlugin(api) {
     const minScore = config.minScore ?? 0.6;
     const tenantId = config.tenantId ?? 'tenant_claw';
     const autoStartServices = config.autoStartServices ?? true;
+    const enhanceClawAgent = config.enhanceClawAgent ?? true;
     const client = new client_js_1.CortexMemClient(serviceUrl);
     let servicesStarted = false;
     let maintenanceTimer = null;
@@ -449,6 +451,17 @@ function createPlugin(api) {
                 api.logger.warn(`[memclaw] Configuration incomplete: ${validation.errors.join(', ')}`);
                 api.logger.warn(`[memclaw] Please configure LLM/Embedding API keys in OpenClaw plugin settings or edit: ${configPath}`);
                 return;
+            }
+            // Enhance AGENTS.md with MemClaw usage guidelines
+            const agentsMdResult = (0, agents_md_injector_js_1.ensureAgentsMdEnhanced)(api.logger, enhanceClawAgent);
+            if (agentsMdResult.injected) {
+                log(`AGENTS.md enhanced with MemClaw section: ${agentsMdResult.path}`);
+            }
+            else if (agentsMdResult.reason === 'already_injected') {
+                log('AGENTS.md already contains MemClaw section');
+            }
+            else if (agentsMdResult.reason === 'no_legacy_patterns') {
+                log('AGENTS.md has no legacy memory patterns, skipping enhancement');
             }
             // Start services
             try {

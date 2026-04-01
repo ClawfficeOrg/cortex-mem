@@ -4,7 +4,7 @@ use cortex_mem_tools::MemoryOperations;
 use std::sync::Arc;
 
 fn qdrant_url() -> String {
-    std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:6333".to_string())
+    std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:6334".to_string())
 }
 
 /// Reindex: clean up no-URI vectors, then full sync

@@ -241,7 +241,7 @@ batch_size = 10
 timeout_secs = 30
 
 [qdrant]
-url = "http://localhost:6333"
+url = "http://localhost:6334"
 collection_name = "cortex-mem"
 embedding_dim = 1536
 timeout_secs = 30

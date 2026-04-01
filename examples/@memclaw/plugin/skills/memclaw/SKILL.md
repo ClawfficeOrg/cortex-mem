@@ -11,11 +11,49 @@ description: MemClaw — High-performance memory plugin for OpenClaw. Outperform
 
 Three-layer memory: L0 (abstract ~100t) → L1 (overview ~2000t) → L2 (full content). Supports semantic search + filesystem browsing.
 
+## ⚠️ Required: AGENTS.md Migration
+
+OpenClaw loads `AGENTS.md` as its working guidelines at startup. If the file still references the legacy memory system (MEMORY.md, daily logs, memory_write), **you MUST update it to use MemClaw instead**.
+
+### Detection
+Check if `AGENTS.md` contains any of these legacy patterns:
+- `MEMORY.md`
+- `daily/YYYY-MM-DD.md`
+- `memory_write`
+- `memory_search`
+- "Write things down" in context of daily logs
+
 ## Prerequisites
 1. Install via `openclaw plugins install @memclaw/memclaw` if not present (tools unavailable or memclaw missing in `openclaw.json`)
 2. Configure LLM/Embedding in plugin settings (see Troubleshooting if fails)
 3. Set `agents.defaults.memorySearch.enabled: false` in `openclaw.json` to avoid conflicts with built-in memory
 4. All configuration is managed through OpenClaw plugin settings. However, when the plugin is first used, incomplete configuration items may cause it to fail. If the plugin or tools cannot be used, proactively inform the user and assist in completing the necessary configurations. For details, refer to the 'Troubleshooting' section below.
+
+## Session ID
+
+`session_id` is used to isolate different conversation contexts. It determines where memories are stored under `cortex://session/{session_id}/`.
+
+**How session_id is determined:**
+1. **Default**: `"default"` - used when no session_id is specified
+2. **Configuration**: Set `defaultSessionId` in `openclaw.json` plugin config to change default
+3. **Per-call override**: Pass `session_id` parameter to tools to use a specific session
+
+**Examples:**
+```
+# Uses default session ("default" or configured defaultSessionId)
+cortex_add_memory(content="...", role="user")
+
+# Uses specific session
+cortex_add_memory(content="...", role="user", session_id="project-alpha")
+cortex_commit_session(session_id="project-alpha")
+```
+
+**URI mapping:**
+- `cortex://session` - Lists all sessions
+- `cortex://session/default` - Default session's root
+- `cortex://session/project-alpha` - Specific session's root
+- `cortex://session/{session_id}/timeline` - Session's message timeline
+- `cortex://session/{session_id}/memories` - Session's extracted memories
 
 ## Tool Selection
 
@@ -48,15 +86,15 @@ cortex_recall(query="user preferences")
 List directory. `uri`, `recursive`, `include_abstracts`
 ```
 cortex_ls(uri="cortex://session")
-cortex_ls(uri="cortex://session/abc123/timeline", include_abstracts=true)
+cortex_ls(uri="cortex://session/default/timeline", include_abstracts=true)
 ```
 Common URIs: `cortex://session/{id}/timeline`, `cortex://session/{id}/memories`
 
 #### cortex_get_abstract / cortex_get_overview / cortex_get_content
 ```
-cortex_get_abstract(uri="cortex://session/abc123/timeline/file.md")  # L0 ~100t
-cortex_get_overview(uri="cortex://session/abc123/timeline/file.md")  # L1 ~2000t
-cortex_get_content(uri="cortex://session/abc123/timeline/file.md")   # L2 full
+cortex_get_abstract(uri="cortex://session/default/timeline/file.md")  # L0 ~100t
+cortex_get_overview(uri="cortex://session/default/timeline/file.md")  # L1 ~2000t
+cortex_get_content(uri="cortex://session/default/timeline/file.md")   # L2 full
 ```
 
 ### Explore & Store
@@ -68,7 +106,7 @@ cortex_explore(query="auth flow", start_uri="cortex://session", return_layers=["
 ```
 
 #### cortex_add_memory
-Store message with optional metadata.
+Store message with optional metadata. Uses default session if `session_id` not specified.
 ```
 cortex_add_memory(
   content="User prefers TypeScript strict mode",
@@ -78,9 +116,10 @@ cortex_add_memory(
 ```
 
 #### cortex_commit_session
-Commit session and trigger extraction pipeline. Call at task completion or topic shifts (NOT just at end).
+Commit session and trigger extraction pipeline. Call at task completion or topic shifts (NOT just at end). Uses default session if `session_id` not specified.
 ```
-cortex_commit_session(session_id="default")
+cortex_commit_session()
+cortex_commit_session(session_id="project-alpha")
 ```
 
 ### Migration & Maintenance

@@ -280,7 +280,7 @@ Content-Type: application/json
 export CORTEX_DATA_DIR="/var/lib/cortex-data"
 
 # 外部服务
-export QDRANT_URL="http://localhost:6333"
+export QDRANT_URL="http://localhost:6334"
 export LLM_API_BASE_URL="https://api.openai.com/v1"
 export LLM_API_KEY="your-api-key"
 

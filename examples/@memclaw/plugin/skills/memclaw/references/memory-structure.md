@@ -9,12 +9,12 @@ All memory resources are addressed using the `cortex://` URI scheme:
 ```
 cortex://
 ├── resources/{resource_name}/           # General resources (facts, knowledge)
-├── user/
+├── user/{user_id}/                      # User-specific data (default user_id: "default")
 │   ├── preferences/{name}.md            # User preferences
 │   ├── entities/{name}.md               # People, projects, concepts
 │   ├── events/{name}.md                 # Decisions, milestones
-│   └── profile/{name}.md                # User profile info
-├── agent/
+│   └── personal_info/{name}.md          # User profile info
+├── agent/{agent_id}/                    # Agent-specific data
 │   ├── cases/{name}.md                  # Problem-solution cases
 │   ├── skills/{name}.md                 # Acquired skills
 │   └── instructions/{name}.md           # Instructions learned
@@ -51,7 +51,7 @@ Each memory resource can have three representation layers:
 | **L2 (Detail)** | `{name}.md` | Full | Exact quotes, complete implementation |
 
 **Layer Resolution:**
-- For files: `cortex://user/preferences/typescript.md` → layers are `.abstract.md` and `.overview.md` in same directory
+- For files: `cortex://user/default/preferences/typescript.md` → layers are `.abstract.md` and `.overview.md` in same directory
 - For directories: `cortex://session/default/timeline` → layers are `.abstract.md` and `.overview.md` in that directory
 
 **Access Pattern:**
@@ -114,18 +114,18 @@ session/{session_id}/timeline/
 
 | Category | Description | URI Pattern |
 |----------|-------------|-------------|
-| `preferences` | User preferences by topic | `cortex://user/preferences/{name}.md` |
-| `entities` | People, projects, concepts | `cortex://user/entities/{name}.md` |
-| `events` | Decisions, milestones | `cortex://user/events/{name}.md` |
-| `profile` | User profile information | `cortex://user/profile/{name}.md` |
+| `preferences` | User preferences by topic | `cortex://user/{user_id}/preferences/{name}.md` |
+| `entities` | People, projects, concepts | `cortex://user/{user_id}/entities/{name}.md` |
+| `events` | Decisions, milestones | `cortex://user/{user_id}/events/{name}.md` |
+| `personal_info` | User profile information | `cortex://user/{user_id}/personal_info/{name}.md` |
 
 ## Agent Memory Categories
 
 | Category | Description | URI Pattern |
 |----------|-------------|-------------|
-| `cases` | Problem-solution pairs | `cortex://agent/cases/{name}.md` |
-| `skills` | Acquired skills | `cortex://agent/skills/{name}.md` |
-| `instructions` | Learned instructions | `cortex://agent/instructions/{name}.md` |
+| `cases` | Problem-solution pairs | `cortex://agent/{agent_id}/cases/{name}.md` |
+| `skills` | Acquired skills | `cortex://agent/{agent_id}/skills/{name}.md` |
+| `instructions` | Learned instructions | `cortex://agent/{agent_id}/instructions/{name}.md` |
 
 ## Session Metadata
 
