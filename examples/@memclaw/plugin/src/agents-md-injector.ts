@@ -156,8 +156,8 @@ You wake up fresh each session. MemClaw is your persistent memory system.
 
 ### Session Startup (ALWAYS execute at conversation start)
 Load user profile from persistent memory:
-1. \`cortex_get_abstract(uri="cortex://user")\` - Load L0 abstract (~100 tokens, user profile summary)
-2. \`cortex_get_overview(uri="cortex://user")\` - Load L1 overview (~2000 tokens, detailed user context)
+1. \`cortex_get_abstract(uri="cortex://user/default")\` - Load L0 abstract (~100 tokens, user profile summary)
+2. \`cortex_get_overview(uri="cortex://user/default")\` - Load L1 overview (~2000 tokens, detailed user context)
 3. \`cortex_ls(uri="cortex://session", include_abstracts=true)\` - See recent sessions
 
 ### Recording Information
