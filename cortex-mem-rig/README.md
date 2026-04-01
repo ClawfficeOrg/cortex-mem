@@ -58,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "./cortex-data",
         "default",
         llm_client,
-        "http://localhost:6333",
+        "http://localhost:6334",
         "cortex_memories",
         "https://api.openai.com/v1",
         "your-embedding-key",

@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             timeout_secs: 30,
         })
         .with_qdrant(QdrantConfig {
-            url: "http://localhost:6333".to_string(),
+            url: "http://localhost:6334".to_string(),
             collection_name: "cortex_memories".to_string(),
             embedding_dim: 1536,
             timeout_secs: 30,

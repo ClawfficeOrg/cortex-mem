@@ -332,7 +332,7 @@ timeout_secs = 30
 
 [qdrant]
 # Vector database configuration
-url = "http://localhost:6333"
+url = "http://localhost:6334"
 collection_name = "cortex_memories"
 embedding_dim = 1536
 timeout_secs = 30

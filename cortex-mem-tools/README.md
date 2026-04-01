@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "./cortex-data",           // data directory
         "default",                  // tenant ID
         llm_client,                 // LLM client
-        "http://localhost:6333",    // Qdrant URL
+        "http://localhost:6334",    // Qdrant URL
         "cortex_memories",          // Qdrant collection
         "https://api.openai.com/v1", // Embedding API URL
         "your-embedding-key",       // Embedding API key

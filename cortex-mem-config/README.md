@@ -20,7 +20,7 @@ The configuration is divided into several sections:
 | Section | Purpose | Example |
 |---------|---------|---------|
 | **`cortex`** | Data storage and core settings | `data_dir: "./cortex-data"` |
-| **`qdrant`** | Vector database connection | `url: "http://localhost:6333"` |
+| **`qdrant`** | Vector database connection | `url: "http://localhost:6334"` |
 | **`embedding`** | Embedding generation API | `model_name: "text-embedding-3-small"` |
 | **`llm`** | Large language model settings | `model_efficient: "gpt-5-mini"` |
 | **`server`** | HTTP server configuration | `host: "localhost", port: 8080` |
