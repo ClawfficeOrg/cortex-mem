@@ -1,7 +1,7 @@
 {
 	"id": "memclaw",
 	"name": "MemClaw",
-	"version": "0.9.29",
+	"version": "0.9.36",
 	"description": "Layered semantic memory for OpenClaw with L0/L1/L2 tiered retrieval, easy setup, and migration from native memory",
 	"kind": "memory",
 	"skills": ["skills/memclaw", "skills/memclaw-maintance"],
@@ -12,7 +12,7 @@
 		"properties": {
 			"serviceUrl": {
 				"type": "string",
-				"description": "Cortex Memory service URL",
+				"description": "Your Cortex Memory URL",
 				"default": "http://localhost:8085"
 			},
 			"defaultSessionId": {
