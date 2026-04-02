@@ -140,7 +140,7 @@ ln -sf "$(pwd)" ~/.openclaw/extensions/memclaw
           "autoStartServices": true,
           "llmApiBaseUrl": "https://api.openai.com/v1",
           "llmApiKey": "your-llm-api-key",
-          "llmModel": "gpt-4o-mini",
+          "llmModel": "gpt-5-mini",
           "embeddingApiBaseUrl": "https://api.openai.com/v1",
           "embeddingApiKey": "your-embedding-api-key",
           "embeddingModel": "text-embedding-3-small"

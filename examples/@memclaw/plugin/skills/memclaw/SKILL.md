@@ -9,10 +9,8 @@ description: MemClaw — High-performance memory plugin for OpenClaw. Outperform
 
 > MemClaw is an open-source memory enhancement plugin based on Cortex Memory. Both MemClaw and this Skill are open-sourced on [GitHub](https://github.com/sopaco/cortex-mem).
 
-Three-layer memory: L0 (abstract ~100t) → L1 (overview ~2000t) → L2 (full content). Supports semantic search + filesystem browsing.
-
 ## Prerequisites
-1. Install via `openclaw plugins install @memclaw/memclaw` if not present (tools unavailable or memclaw missing in `openclaw.json`)
+1. Install via `openclaw plugins install clawhub:@memclaw/memclaw` if not present (memclaw missing in `openclaw.json`)
 2. Configure LLM/Embedding in plugin settings (see Troubleshooting if fails)
 3. Set `agents.defaults.memorySearch.enabled: false` in `openclaw.json` to avoid conflicts with built-in memory
 4. All configuration is managed through OpenClaw plugin settings. However, when the plugin is first used, incomplete configuration items may cause it to fail. If the plugin or tools cannot be used, proactively inform the user and assist in completing the necessary configurations. For details, refer to the 'Troubleshooting' section below.
@@ -80,9 +78,9 @@ Common URIs: `cortex://session/{id}/timeline`, `cortex://session/{id}/memories`
 
 #### cortex_get_abstract / cortex_get_overview / cortex_get_content
 ```
-cortex_get_abstract(uri="cortex://session/default/timeline/file.md")  # L0 ~100t
-cortex_get_overview(uri="cortex://session/default/timeline/file.md")  # L1 ~2000t
-cortex_get_content(uri="cortex://session/default/timeline/file.md")   # L2 full
+cortex_get_abstract(uri="cortex://session/default/timeline/...")  # L0 ~100t
+cortex_get_overview(uri="cortex://session/default/timeline/...")  # L1 ~2000t
+cortex_get_content(uri="cortex://session/default/timeline/...")   # L2 full
 ```
 
 ### Explore & Store
