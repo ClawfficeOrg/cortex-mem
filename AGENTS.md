@@ -1,159 +1,235 @@
 # Cortex Memory - AI Agent Context Guide
 
-> This file provides essential context for AI coding agents working on the Cortex Memory project.
+> Essential context for AI coding agents working on this project.
 
-## Quick Start for Agents
+---
 
-1. **Read `.ai-context/project-overview.md`** to understand what this project is about
-2. **Read `.ai-context/architecture.md`** to understand the system design
-3. **Read `.ai-context/modules.md`** to understand each crate's responsibility
-4. **Read `.ai-context/uri-structure.md`** to understand the `cortex://` URI scheme
-5. **Read `.ai-context/api-reference.md`** for REST API endpoints
+## Project Overview
 
-## Project Summary
-
-Cortex Memory is a **Rust-based AI-native memory framework** that provides:
-- Three-tier memory hierarchy (L0 Abstract → L1 Overview → L2 Detail)
+Cortex Memory is a **Rust-based AI-native memory framework** providing persistent long-term memory for AI agents via:
+- Three-tier memory hierarchy (L0/L1/L2)
 - Virtual filesystem with `cortex://` URI scheme
-- Vector-based semantic search via Qdrant
-- Multi-tenant support
+- Vector-based semantic search (Qdrant)
 
-## Key Technical Decisions
+---
 
-| Aspect | Decision |
-|--------|----------|
-| Language | Rust 1.86+ (Edition 2024) |
-| Async Runtime | Tokio |
-| Web Framework | Axum |
-| Vector DB | Qdrant |
-| API Version | `/api/v2/*` |
-| Default Port | 8085 |
+## Core Concepts
+
+### Memory Dimensions
+
+| Dimension | Purpose | Path Pattern |
+|-----------|---------|--------------|
+| `session` | Conversation memories | `cortex://session/{id}/timeline/...` |
+| `user` | User-specific memories | `cortex://user/{user_id}/{category}/...` |
+| `agent` | Agent-specific memories | `cortex://agent/{agent_id}/{category}/...` |
+| `resources` | Shared knowledge | `cortex://resources/{name}/...` |
+
+### Three-Tier Layers
+
+| Layer | Tokens | Purpose | File |
+|-------|--------|---------|------|
+| L0 | ~100 | Quick relevance filtering | `.abstract.md` |
+| L1 | ~2000 | Context understanding | `.overview.md` |
+| L2 | Full | Complete original | `{name}.md` |
+
+**Search scoring**: `0.2×L0 + 0.3×L1 + 0.5×L2`
+
+### Data Flow
+
+```
+Message → Session (timeline/*.md) → Close → LLM Extract → Classify
+    → user/agent/resources → Generate L0/L1 → Vector Index (Qdrant)
+```
+
+---
+
+## Workspace Structure
+
+```
+cortex-mem-core/      # Core business logic (src/lib.rs)
+cortex-mem-service/   # REST API server (src/main.rs)
+cortex-mem-cli/       # CLI tool (src/main.rs)
+cortex-mem-mcp/       # MCP protocol server (src/main.rs)
+cortex-mem-tools/     # MCP tool definitions (src/lib.rs)
+cortex-mem-config/    # Configuration parsing (src/lib.rs)
+cortex-mem-rig/       # Rig integration (src/lib.rs)
+cortex-mem-insights/  # Web dashboard (Svelte)
+```
+
+---
+
+## Build & Test
+
+```bash
+cargo build --workspace
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --check
+
+# Run service
+cargo run --bin cortex-mem-service -- --config config.toml
+
+# Run CLI
+cargo run --bin cortex-mem -- --help
+```
+
+---
+
+## Coding Conventions
+
+### Rust Style
+
+- **Async by default**: Use `async fn` for I/O operations
+- **Arc for sharing**: `Arc<T>` for shared state across threads
+- **RwLock for state**: `RwLock<T>` for mutable shared state
+- **Result handling**: `anyhow::Result` for app code, `thiserror` for library errors
+
+```rust
+// Good: Use tokio::fs, not std::fs in async context
+pub async fn read_file(&self, path: &str) -> Result<String> {
+    tokio::fs::read_to_string(path).await?;
+}
+
+// Avoid: Blocking in async
+pub async fn bad(&self) -> Result<String> {
+    std::fs::read_to_string("file.txt")?; // Blocks!
+}
+```
+
+### Error Handling
+
+```rust
+// Define errors in error.rs with thiserror
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Invalid URI: {0}")]
+    InvalidUri(String),
+}
+
+// Use anyhow in handlers and CLI
+pub fn do_work() -> anyhow::Result<()> { ... }
+```
+
+### API Design
+
+- Avoid bool or ambiguous `Option` parameters that create unclear call sites
+- Prefer enums, builder patterns, or named methods
+
+```rust
+// Bad: foo(false, None, true) - what do these mean?
+// Good: foo(FooOptions { verbose: false, output: None, force: true })
+// Good: foo.quiet().without_output().force()
+```
+
+### Module Size
+
+- Target modules under 500 LoC (excluding tests)
+- If a file exceeds 800 LoC, add new functionality in a new module
+- Extract related tests when moving code to new modules
+
+### Documentation
+
+- Add doc comments to public traits explaining their role
+- When adding/changing APIs, update relevant docs in `.ai-context/` if applicable
+
+---
+
+## Key Files
+
+| What | Where |
+|------|-------|
+| Core types | `cortex-mem-core/src/types.rs` |
+| URI parsing | `cortex-mem-core/src/filesystem/uri.rs` |
+| Search engine | `cortex-mem-core/src/search/vector_engine.rs` |
+| Session manager | `cortex-mem-core/src/session/manager.rs` |
+| LLM client | `cortex-mem-core/src/llm/client.rs` |
+| API handlers | `cortex-mem-service/src/handlers/` |
+| MCP tools | `cortex-mem-tools/src/tools/` |
+| Config schema | `cortex-mem-config/src/lib.rs` |
+
+---
+
+## Configuration
+
+Via `config.toml`. Key environment variables:
+
+```bash
+OPENAI_API_KEY      # or LLM_API_KEY
+EMBEDDING_API_KEY   # Optional, defaults to LLM key
+QDRANT_URL          # Optional, defaults to localhost:6334
+```
+
+---
+
+## Multi-Tenancy
+
+```
+{data_dir}/tenants/{tenant_id}/
+├── session/
+├── user/
+├── agent/
+└── resources/
+
+Qdrant collection: "{base}_{tenant_id}"
+```
+
+Switch tenant via `POST /api/v2/tenants/switch`. Complete isolation between tenants.
+
+---
 
 ## Common Tasks
 
 ### Adding a New API Endpoint
 
-1. Add route in `cortex-mem-service/src/routes/mod.rs`
-2. Add handler in `cortex-mem-service/src/handlers/`
-3. Add models in `cortex-mem-service/src/models.rs`
+1. Add handler in `cortex-mem-service/src/handlers/`
+2. Register route in `cortex-mem-service/src/routes/mod.rs`
+3. Add models in `cortex-mem-service/src/models.rs` if needed
 
-### Adding a New Tool (MCP)
+### Adding a New MCP Tool
 
 1. Define tool schema in `cortex-mem-tools/src/tools/`
 2. Add operation in `cortex-mem-tools/src/operations.rs`
 3. Register in `cortex-mem-mcp/src/service.rs`
 
-### Modifying URI Structure
+### Adding a New Core Module
 
-1. Update `cortex-mem-core/src/filesystem/uri.rs`
-2. Update `cortex-mem-core/src/types.rs` (Dimension enum)
-3. Update `.ai-context/uri-structure.md`
+1. Create module directory in `cortex-mem-core/src/`
+2. Add `pub mod name;` to `lib.rs`
+3. Re-export key types in `lib.rs` if public API
+4. Update `.ai-context/` if it's a major architectural addition
 
-## File Locations Quick Reference
+---
 
-| What | Where |
-|------|-------|
-| Core business logic | `cortex-mem-core/src/` |
-| REST API handlers | `cortex-mem-service/src/handlers/` |
-| REST API routes | `cortex-mem-service/src/routes/` |
-| MCP tools | `cortex-mem-tools/src/tools/` |
-| CLI commands | `cortex-mem-cli/src/commands/` |
-| Configuration | `cortex-mem-config/src/lib.rs` |
-| URI parsing | `cortex-mem-core/src/filesystem/uri.rs` |
-| Vector search | `cortex-mem-core/src/search/` |
-| Session management | `cortex-mem-core/src/session/` |
-| Layer generation | `cortex-mem-core/src/layers/` |
-| LLM client | `cortex-mem-core/src/llm/` |
-| Embedding | `cortex-mem-core/src/embedding/` |
-| MemClaw plugin | `examples/@memclaw/plugin/` |
+## Documentation Maintenance
 
-## Build & Test Commands
+### When to Update
 
-```bash
-# Build all crates
-cargo build --workspace
+| Trigger | Action |
+|---------|--------|
+| New crate | Update Workspace Structure |
+| New core module (>200 LoC) | Update Key Files |
+| Architecture decision | Add to `.ai-context/decisions.md` |
+| New config field (non-obvious) | Note in Configuration |
 
-# Build release
-cargo build --workspace --release
+### When NOT to Update
 
-# Run tests
-cargo test --workspace
+- New functions/methods
+- New API endpoints
+- Bug fixes
+- Internal refactoring
 
-# Run the service
-cargo run --bin cortex-mem-service -- --config config.toml
-
-# Run CLI
-cargo run --bin cortex-mem -- --help
-
-# Run MCP server
-cargo run --bin cortex-mem-mcp -- --config config.toml
-```
-
-## Configuration
-
-Configuration is via `config.toml`. See `.ai-context/configuration.md` for details.
-
-Key environment variables:
-- `OPENAI_API_KEY` or `LLM_API_KEY` - LLM API key
-- `EMBEDDING_API_KEY` - Embedding API key
-
-## Data Directory Structure
-
-```
-cortex-data/
-├── tenants/
-│   └── {tenant_id}/
-│       ├── session/{session_id}/timeline/{YYYY-MM}/{DD}/{HH_MM_SS}_{id}.md
-│       ├── user/{user_id}/preferences/{name}.md
-│       ├── user/{user_id}/entities/{name}.md
-│       ├── user/{user_id}/events/{name}.md
-│       ├── agent/{agent_id}/cases/{name}.md
-│       └── resources/
-```
-
-**Note**: `user_id` is required in the path. Default value is `"default"` in most scenarios.
-
-## Important Patterns
-
-### Three-Tier Layer Access
-
-```rust
-// L0: Abstract (~100 tokens) - Quick relevance check
-GET /api/v2/filesystem/abstract?uri=cortex://session/{id}/timeline
-
-// L1: Overview (~2000 tokens) - Moderate detail
-GET /api/v2/filesystem/overview?uri=cortex://session/{id}/timeline
-
-// L2: Full content - Complete original
-GET /api/v2/filesystem/content?uri=cortex://session/{id}/timeline/{file}.md
-```
-
-### Session Lifecycle
-
-1. `POST /api/v2/sessions` - Create session
-2. `POST /api/v2/sessions/{id}/messages` - Add messages
-3. `POST /api/v2/sessions/{id}/close` - Close & trigger extraction
-
-### Search with Layered Retrieval
-
-```json
-POST /api/v2/search
-{
-  "query": "user preferences",
-  "return_layers": ["L0", "L1"],
-  "limit": 10,
-  "min_score": 0.6
-}
-```
-
-## Context Files
+### `.ai-context/` Files
 
 | File | Purpose |
 |------|---------|
-| `project-overview.md` | Project goals, features, and ecosystem |
-| `architecture.md` | System architecture and data flow |
-| `modules.md` | Each crate's responsibility and key types |
+| `decisions.md` | Architecture Decision Records |
 | `uri-structure.md` | Complete URI scheme reference |
-| `api-reference.md` | All REST API endpoints |
-| `configuration.md` | Configuration file format |
-| `development-guide.md` | Development workflow and conventions |
+
+---
+
+## Notes
+
+- Default `user_id` is `"default"` in URI paths
+- L0/L1 layer files (`.abstract.md`, `.overview.md`) are hidden
+- Session extraction only triggers on explicit `close` call
+- Use `include_layers=true` in `cortex_ls` to see layer files
